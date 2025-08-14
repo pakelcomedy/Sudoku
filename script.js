@@ -1,85 +1,72 @@
 /* ==========================================================================
    Sudoku — script.js
-   - Integrates with index.html and style.css from previous files
-   - Responsibilities:
-     * Render 9x9 board
-     * Generate puzzles (with unique-solution check)
-     * Solve puzzles (backtracking)
-     * UI interactions: input, keyboard, pencil mode, highlights
-     * Timer, mistakes, save/load, leaderboard
+   - Integrates with the provided index.html & style.css
+   - No manual typing into cells (inputs are readonly). Use digit-bank / erase.
+   - Auto-check on every placement; Check button removed from UI.
    ========================================================================== */
 
 (function () {
   'use strict';
 
   /* -----------------------------
-     Config / DOM pointers
+     DOM selectors
      ----------------------------- */
-  const SELECTORS = {
+  const SEL = {
     board: '#sudoku-board',
-    cellTemplate: '#cell-template',
-    newGameBtn: '#new-game',
-    checkBtn: '#check',
-    solveBtn: '#solve',
-    resetBtn: '#reset',
+    template: '#cell-template',
+    newGame: '#new-game',
+    solve: '#solve',
+    reset: '#reset',
     difficulty: '#difficulty',
     timer: '#timer',
-    mistakes: '#mistakes',
+    message: '#message',
     togglePencil: '#toggle-pencil',
     toggleTheme: '#toggle-theme',
-    message: '#message',
-    saveBtn: '#save-progress',
-    loadBtn: '#load-progress',
-    leaderboard: '#leader-list',
-    leaderboardPanel: '.leaderboard'
+    save: '#save-progress',
+    load: '#load-progress',
+    leaderList: '#leader-list',
+    digitBank: '#digit-bank',
+    eraseBtn: '#erase-btn'
   };
 
-  const $ = (sel) => document.querySelector(sel);
-  const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+  const $ = (s) => document.querySelector(s);
+  const $$ = (s) => Array.from(document.querySelectorAll(s));
 
-  const boardEl = $(SELECTORS.board);
-  const template = $(SELECTORS.cellTemplate);
-  const newGameBtn = $(SELECTORS.newGameBtn);
-  const checkBtn = $(SELECTORS.checkBtn);
-  const solveBtn = $(SELECTORS.solveBtn);
-  const resetBtn = $(SELECTORS.resetBtn);
-  const difficultySel = $(SELECTORS.difficulty);
-  const timerEl = $(SELECTORS.timer);
-  const mistakesEl = $(SELECTORS.mistakes);
-  const togglePencilBtn = $(SELECTORS.togglePencil);
-  const toggleThemeBtn = $(SELECTORS.toggleTheme);
-  const messageEl = $(SELECTORS.message);
-  const saveBtn = $(SELECTORS.saveBtn);
-  const loadBtn = $(SELECTORS.loadBtn);
-  const leaderboardList = $(SELECTORS.leaderboard);
+  const boardEl = $(SEL.board);
+  const tpl = $(SEL.template);
+  const btnNew = $(SEL.newGame);
+  const btnSolve = $(SEL.solve);
+  const btnReset = $(SEL.reset);
+  const selDifficulty = $(SEL.difficulty);
+  const timerEl = $(SEL.timer);
+  const messageEl = $(SEL.message);
+  const togglePencilBtn = $(SEL.togglePencil);
+  const toggleThemeBtn = $(SEL.toggleTheme);
+  const btnSave = $(SEL.save);
+  const btnLoad = $(SEL.load);
+  const leaderList = $(SEL.leaderList);
+  const digitBank = $(SEL.digitBank);
+  const eraseBtn = $(SEL.eraseBtn);
 
   /* -----------------------------
      Data model
      ----------------------------- */
-  // grid: 9x9 array of cell objects { value: number|null, given: boolean, notes: Set<number> }
+  // cell: { value: number|null, given: boolean, notes: Set<number> }
   let grid = createEmptyGrid();
-  let initialGrid = null; // deep copy of puzzle at start for reset
-  let solutionGrid = null; // full-solution 9x9 numbers
-  let selectedCell = null; // { r, c }
+  let initialGrid = null;
+  let solutionGrid = null;
+  let selected = null; // {r,c}
   let pencilMode = false;
   let timerInterval = null;
-  let elapsedSeconds = 0;
-  let mistakes = 0;
-  let solveAnimationTimer = null;
-  let solvingAnimationInProgress = false;
+  let elapsed = 0;
 
-  const LS_KEYS = {
-    SAVED: 'sudoku_saved_v1',
-    LEADER: 'sudoku_leader_v1'
-  };
+  const LS_KEYS = { SAVED: 'sudoku_saved_v2', LEAD: 'sudoku_lead_v2' };
 
-  /* -----------------------------
-     Difficulty parameters
-     ----------------------------- */
-  const DIFFICULTY = {
+  /* Difficulty clues */
+  const DIFF = {
     easy: { minClues: 40, maxClues: 50 },
     medium: { minClues: 30, maxClues: 35 },
-    hard: { minClues: 25, maxClues: 28 },
+    hard: { minClues: 25, maxClues: 28 }
   };
 
   /* -----------------------------
@@ -91,22 +78,19 @@
     );
   }
 
-  function deepCopyGridNumbers(gridNumbers) {
-    return gridNumbers.map(row => row.slice());
+  function gridToNumbers(g) {
+    return g.map(row => row.map(cell => (cell.value === null ? 0 : cell.value)));
   }
 
-  function gridToNumbers(gridModel) {
-    return gridModel.map(row => row.map(cell => (cell.value === null ? 0 : cell.value)));
+  function numbersToModel(nums) {
+    return nums.map(row => row.map(v => ({ value: v === 0 ? null : v, given: v !== 0, notes: new Set() })));
   }
 
-  function numbersToGridModel(numbers) {
-    return numbers.map((row, r) =>
-      row.map((val, c) => ({ value: val === 0 ? null : val, given: val !== 0, notes: new Set() }))
-    );
+  function deepCopyNumbers(nums) {
+    return nums.map(r => r.slice());
   }
 
-  function shuffleArray(arr) {
-    // Fisher-Yates
+  function shuffle(arr) {
     for (let i = arr.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [arr[i], arr[j]] = [arr[j], arr[i]];
@@ -118,247 +102,144 @@
     return Math.floor(r / 3) * 3 + Math.floor(c / 3);
   }
 
-  function formatTime(seconds) {
-    const mm = String(Math.floor(seconds / 60)).padStart(2, '0');
-    const ss = String(seconds % 60).padStart(2, '0');
+  function formatTime(s) {
+    const mm = String(Math.floor(s / 60)).padStart(2, '0');
+    const ss = String(s % 60).padStart(2, '0');
     return `${mm}:${ss}`;
   }
 
-  function setMessage(text, delay = 3500) {
+  function setMessage(txt, ms = 2500) {
     if (!messageEl) return;
-    messageEl.textContent = text;
-    if (delay > 0) {
-      setTimeout(() => {
-        if (messageEl.textContent === text) messageEl.textContent = '';
-      }, delay);
-    }
+    messageEl.textContent = txt;
+    if (ms > 0) setTimeout(() => { if (messageEl.textContent === txt) messageEl.textContent = ''; }, ms);
   }
 
   /* -----------------------------
-     Rendering DOM
+     Render / DOM
      ----------------------------- */
   function buildBoardDOM() {
     boardEl.innerHTML = '';
-    // Build 9x9 cell wrappers
     for (let r = 0; r < 9; r++) {
       for (let c = 0; c < 9; c++) {
         const wrapper = document.createElement('div');
         wrapper.className = 'cell-wrapper';
-        wrapper.setAttribute('data-row', r);
-        wrapper.setAttribute('data-col', c);
-        wrapper.setAttribute('data-box', posToBox(r, c));
+        wrapper.dataset.row = r;
+        wrapper.dataset.col = c;
+        wrapper.dataset.box = posToBox(r, c);
         wrapper.setAttribute('role', 'gridcell');
-        wrapper.tabIndex = -1;
 
-        // Input element
         const input = document.createElement('input');
         input.type = 'text';
         input.className = 'cell';
-        input.setAttribute('inputmode', 'numeric');
-        input.setAttribute('maxlength', '1');
-        input.setAttribute('aria-label', `Cell ${r + 1}-${c + 1}`);
         input.autocomplete = 'off';
+        input.inputMode = 'none'; // intentionally block numeric softkeyboard
+        input.readOnly = true; // prevent manual typing
+        input.setAttribute('aria-label', `Cell ${r + 1}-${c + 1}`);
         input.value = '';
 
-        // notes container (3x3)
         const notes = document.createElement('div');
         notes.className = 'notes';
         notes.setAttribute('aria-hidden', 'true');
-        // nine placeholders
         for (let n = 1; n <= 9; n++) {
-          const noteEl = document.createElement('div');
-          noteEl.className = 'note';
-          noteEl.dataset.n = String(n);
-          noteEl.textContent = ''; // will fill when notes exist
-          notes.appendChild(noteEl);
+          const nd = document.createElement('div');
+          nd.className = 'note';
+          nd.dataset.n = n;
+          nd.textContent = '';
+          notes.appendChild(nd);
         }
 
         wrapper.appendChild(input);
         wrapper.appendChild(notes);
-
-        // Event listeners per wrapper / input
         attachCellListeners(wrapper, input);
-
         boardEl.appendChild(wrapper);
       }
     }
   }
 
-  function renderBoardFromModel() {
-    // Walk DOM and reflect grid model
+  function renderFromModel() {
     const wrappers = Array.from(boardEl.children);
-    wrappers.forEach((wrapper) => {
-      const r = Number(wrapper.dataset.row);
-      const c = Number(wrapper.dataset.col);
-      const input = wrapper.querySelector('.cell');
-      const notesEl = wrapper.querySelector('.notes');
+    wrappers.forEach(w => {
+      const r = +w.dataset.row;
+      const c = +w.dataset.col;
       const cell = grid[r][c];
+      const input = w.querySelector('.cell');
+      const notes = w.querySelectorAll('.note');
 
-      // class on wrapper
-      wrapper.classList.toggle('has-value', cell.value !== null);
-
-      // set value and readonly for givens
       if (cell.value !== null) {
         input.value = String(cell.value);
+        w.classList.add('has-value');
       } else {
         input.value = '';
+        w.classList.remove('has-value');
       }
+
       if (cell.given) {
         input.classList.add('given');
         input.setAttribute('readonly', 'readonly');
-        input.setAttribute('aria-readonly', 'true');
         input.tabIndex = -1;
       } else {
         input.classList.remove('given');
         input.removeAttribute('readonly');
-        input.removeAttribute('aria-readonly');
         input.tabIndex = 0;
       }
 
-      // render notes
-      const noteDivs = notesEl.querySelectorAll('.note');
-      noteDivs.forEach((nd) => {
+      // notes
+      notes.forEach(nd => {
         const n = Number(nd.dataset.n);
         nd.textContent = cell.notes.has(n) ? n : '';
       });
 
-      // clear state classes
+      // clear feedback classes
       input.classList.remove('invalid', 'correct', 'highlight');
+      w.classList.remove('highlight-row', 'highlight-col', 'highlight-block');
     });
 
-    // update timer & mistakes UI
-    timerEl.textContent = formatTime(elapsedSeconds);
-    mistakesEl.textContent = `Mistakes: ${mistakes}`;
+    // highlight selection if exists
+    if (selected) updateHighlights(selected.r, selected.c);
+
+    // update digit counts
+    updateDigitCounts();
+    timerEl.textContent = formatTime(elapsed);
   }
 
   /* -----------------------------
-     Event handlers: per-cell
+     Cell listeners
      ----------------------------- */
   function attachCellListeners(wrapper, input) {
-    // pointer focus
-    wrapper.addEventListener('click', (e) => {
-      const r = Number(wrapper.dataset.row);
-      const c = Number(wrapper.dataset.col);
-      focusCell(r, c);
+    wrapper.addEventListener('click', () => {
+      const r = +wrapper.dataset.row;
+      const c = +wrapper.dataset.col;
+      selectCell(r, c);
       input.focus({ preventScroll: true });
     });
 
-    // double click toggles pencil mode for that cell (quick note toggle hint)
-    wrapper.addEventListener('dblclick', (e) => {
-      const r = Number(wrapper.dataset.row);
-      const c = Number(wrapper.dataset.col);
-      // toggle pencil mode for convenience
-      setPencilMode(!pencilMode);
-      focusCell(r, c);
-      setMessage(`Pencil mode ${pencilMode ? 'ON' : 'OFF'}`, 1200);
+    wrapper.addEventListener('dblclick', () => {
+      // convenient toggle pencil
+      setPencil(!pencilMode);
+      setMessage(`Pencil ${pencilMode ? 'ON' : 'OFF'}`, 900);
     });
 
-    // input listener: typed value
-    input.addEventListener('input', (e) => {
-      if (solvingAnimationInProgress) return;
-      const r = Number(wrapper.dataset.row);
-      const c = Number(wrapper.dataset.col);
-      const raw = input.value.replace(/[^\d]/g, '').slice(0, 1); // keep only one digit 1-9
-      if (raw === '') {
-        // user cleared
-        setCellValue(r, c, null, { user: true });
-        return;
-      }
-      const num = Number(raw);
-      if (num < 1 || num > 9) {
-        input.value = '';
-        return;
-      }
-      if (pencilMode) {
-        // toggle note instead of setting value
-        toggleNote(r, c, num);
-        // show notes in DOM; value cleared
-        input.value = '';
-      } else {
-        // set as value
-        setCellValue(r, c, num, { user: true });
-      }
-    });
-
-    // keydown for navigation + backspace handling
-    input.addEventListener('keydown', (e) => {
-      const r = Number(wrapper.dataset.row);
-      const c = Number(wrapper.dataset.col);
-
-      // arrow keys to move selection
-      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
-        e.preventDefault();
-        const pos = movePos({ r, c }, e.key);
-        focusCell(pos.r, pos.c);
-        const nextWrapper = getWrapper(pos.r, pos.c);
-        nextWrapper.querySelector('.cell').focus({ preventScroll: true });
-        return;
-      }
-
-      if (e.key === 'Backspace' || e.key === 'Delete') {
-        e.preventDefault();
-        if (grid[r][c].given) return; // can't change givens
-        if (pencilMode) {
-          // clear notes
-          grid[r][c].notes.clear();
-        } else {
-          setCellValue(r, c, null, { user: true });
-        }
-        renderBoardFromModel();
-        return;
-      }
-
-      // If user presses number keys while focused, allow them to type naturally (handled by input event)
-      // But also support numpad keys (they will appear as digits usually)
-    });
-
-    // focus/blur for highlighting
     input.addEventListener('focus', () => {
-      const r = Number(wrapper.dataset.row);
-      const c = Number(wrapper.dataset.col);
-      setSelectedCell(r, c);
+      const r = +wrapper.dataset.row;
+      const c = +wrapper.dataset.col;
+      selectCell(r, c);
     });
+
     input.addEventListener('blur', () => {
-      // small delay to allow other focus events to process
+      // delay clear highlights if nothing else focused inside board
       setTimeout(() => {
         if (!document.activeElement || !boardEl.contains(document.activeElement)) {
-          clearHighlights();
+          // keep selection but remove keyboard focus visuals
         }
-      }, 20);
+      }, 50);
     });
-  }
-
-  function movePos(pos, arrowKey) {
-    let { r, c } = pos;
-    if (arrowKey === 'ArrowUp') r = (r + 8) % 9;
-    if (arrowKey === 'ArrowDown') r = (r + 1) % 9;
-    if (arrowKey === 'ArrowLeft') c = (c + 8) % 9;
-    if (arrowKey === 'ArrowRight') c = (c + 1) % 9;
-    return { r, c };
-  }
-
-  function getWrapper(r, c) {
-    return boardEl.querySelector(`.cell-wrapper[data-row="${r}"][data-col="${c}"]`);
-  }
-
-  function setSelectedCell(r, c) {
-    selectedCell = { r, c };
-    updateHighlights(r, c);
-  }
-
-  function focusCell(r, c) {
-    const wrapper = getWrapper(r, c);
-    if (!wrapper) return;
-    const input = wrapper.querySelector('.cell');
-    input.focus({ preventScroll: true });
-    setSelectedCell(r, c);
   }
 
   function clearHighlights() {
     $$('.cell-wrapper').forEach(w => {
       w.classList.remove('highlight-row', 'highlight-col', 'highlight-block', 'highlight');
-      const input = w.querySelector('.cell');
-      input.classList.remove('highlight');
+      const inp = w.querySelector('.cell');
+      inp.classList.remove('highlight');
     });
   }
 
@@ -366,47 +247,95 @@
     clearHighlights();
     const box = posToBox(r, c);
     $$('.cell-wrapper').forEach(w => {
-      const rr = Number(w.dataset.row);
-      const cc = Number(w.dataset.col);
-      const b = Number(w.dataset.box);
+      const rr = +w.dataset.row;
+      const cc = +w.dataset.col;
+      const bb = +w.dataset.box;
       if (rr === r) w.classList.add('highlight-row');
       if (cc === c) w.classList.add('highlight-col');
-      if (b === box) w.classList.add('highlight-block');
+      if (bb === box) w.classList.add('highlight-block');
     });
-    const wrapper = getWrapper(r, c);
-    if (wrapper) {
-      wrapper.classList.add('highlight');
-      wrapper.querySelector('.cell').classList.add('highlight');
+    const w = getWrapper(r, c);
+    if (w) {
+      w.classList.add('highlight');
+      w.querySelector('.cell').classList.add('highlight');
     }
   }
 
+  function selectCell(r, c) {
+    // ignore selecting given cells? still allow selection to view.
+    selected = { r, c };
+    updateHighlights(r, c);
+  }
+
+  function getWrapper(r, c) {
+    return boardEl.querySelector(`.cell-wrapper[data-row="${r}"][data-col="${c}"]`);
+  }
+
   /* -----------------------------
-     Model manipulation
+     Model ops: set value / toggle note / erase
      ----------------------------- */
-  function setCellValue(r, c, value, { user = false } = {}) {
-    if (grid[r][c].given && user) {
-      return; // can't overwrite givens
+  function setValueAt(r, c, val, options = {}) {
+    if (!inRange(r, c)) return;
+    const cell = grid[r][c];
+    if (cell.given) return;
+    if (val === null) {
+      cell.value = null;
+    } else {
+      cell.value = val;
+      cell.notes.clear();
     }
-    grid[r][c].value = value;
-    // when setting a real value, clear notes
-    if (value !== null) grid[r][c].notes.clear();
-    // UI update
-    renderBoardFromModel();
+    renderFromModel();
+    autoCheckAndPostProcess();
+    maybeSolved();
   }
 
-  function toggleNote(r, c, n) {
-    if (grid[r][c].value !== null) return; // if a value exists, don't add notes
-    if (grid[r][c].notes.has(n)) grid[r][c].notes.delete(n);
-    else grid[r][c].notes.add(n);
-    renderBoardFromModel();
+  function toggleNoteAt(r, c, n) {
+    if (!inRange(r, c)) return;
+    const cell = grid[r][c];
+    if (cell.given) return;
+    if (cell.value !== null) return;
+    if (cell.notes.has(n)) cell.notes.delete(n);
+    else cell.notes.add(n);
+    renderFromModel();
+  }
+
+  function eraseAt(r, c) {
+    if (!inRange(r, c)) return;
+    const cell = grid[r][c];
+    if (cell.given) return;
+    cell.value = null;
+    cell.notes.clear();
+    renderFromModel();
+  }
+
+  function inRange(r, c) {
+    return r >= 0 && r < 9 && c >= 0 && c < 9;
   }
 
   /* -----------------------------
-     Sudoku logic: validation
+     Auto-check: mark conflicts visually
      ----------------------------- */
+  function autoCheckAndPostProcess() {
+    // compute numbers grid
+    const nums = gridToNumbers(grid);
+    // clear all invalids first
+    $$('.cell').forEach(i => i.classList.remove('invalid'));
+    // check each filled cell
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        const v = nums[r][c];
+        if (v === 0) continue;
+        nums[r][c] = 0; // remove temporarily
+        if (!isValidPlacement(nums, r, c, v)) {
+          const wrapper = getWrapper(r, c);
+          if (wrapper) wrapper.querySelector('.cell').classList.add('invalid');
+        }
+        nums[r][c] = v; // restore
+      }
+    }
+  }
+
   function isValidPlacement(numbers, r, c, num) {
-    // numbers is 9x9 array of ints (0 for empty)
-    // check row/col/box
     for (let i = 0; i < 9; i++) {
       if (numbers[r][i] === num) return false;
       if (numbers[i][c] === num) return false;
@@ -422,15 +351,12 @@
   }
 
   /* -----------------------------
-     Solver: backtracking (single solution)
-     - returns boolean (solved) and writes into numbers if solved
+     Solver & generator (backtracking)
      ----------------------------- */
   function solveSudoku(numbers) {
-    // find empty
     for (let r = 0; r < 9; r++) {
       for (let c = 0; c < 9; c++) {
         if (numbers[r][c] === 0) {
-          // try numbers 1..9
           for (let n = 1; n <= 9; n++) {
             if (isValidPlacement(numbers, r, c, n)) {
               numbers[r][c] = n;
@@ -438,40 +364,24 @@
               numbers[r][c] = 0;
             }
           }
-          return false; // no valid number
+          return false;
         }
       }
     }
-    // no empty: solved
     return true;
   }
 
-  /* -----------------------------
-     Count solutions (used to ensure uniqueness)
-     - stops early if more than `limit` solutions found (default 2)
-     ----------------------------- */
   function countSolutions(numbers, limit = 2) {
     let count = 0;
-
     function backtrack() {
-      if (count >= limit) return; // stop early
-      // find empty
-      let found = false;
-      let er = -1, ec = -1;
+      if (count >= limit) return;
+      let found = false, er = -1, ec = -1;
       for (let r = 0; r < 9 && !found; r++) {
         for (let c = 0; c < 9; c++) {
-          if (numbers[r][c] === 0) {
-            found = true;
-            er = r; ec = c;
-            break;
-          }
+          if (numbers[r][c] === 0) { found = true; er = r; ec = c; break; }
         }
       }
-      if (!found) {
-        count++;
-        return;
-      }
-      // try digits in random-ish order could help, but basic order fine
+      if (!found) { count++; return; }
       for (let n = 1; n <= 9; n++) {
         if (isValidPlacement(numbers, er, ec, n)) {
           numbers[er][ec] = n;
@@ -481,30 +391,22 @@
         }
       }
     }
-
     backtrack();
     return count;
   }
 
-  /* -----------------------------
-     Generator: produce a full solution, then remove numbers per difficulty
-     ----------------------------- */
   function generateFullSolution() {
-    // start with empty numbers grid
-    const numbers = Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => 0));
-
-    // backtracking with randomized candidates
+    const nums = Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => 0));
     function fill() {
-      // find empty
       for (let r = 0; r < 9; r++) {
         for (let c = 0; c < 9; c++) {
-          if (numbers[r][c] === 0) {
-            const candidates = shuffleArray([1,2,3,4,5,6,7,8,9].slice());
+          if (nums[r][c] === 0) {
+            const candidates = shuffle([1,2,3,4,5,6,7,8,9].slice());
             for (const n of candidates) {
-              if (isValidPlacement(numbers, r, c, n)) {
-                numbers[r][c] = n;
+              if (isValidPlacement(nums, r, c, n)) {
+                nums[r][c] = n;
                 if (fill()) return true;
-                numbers[r][c] = 0;
+                nums[r][c] = 0;
               }
             }
             return false;
@@ -513,157 +415,81 @@
       }
       return true;
     }
-
     fill();
-    return numbers; // fully filled
+    return nums;
   }
 
-  function generatePuzzle(difficulty = 'medium', progressCallback = null) {
-    // Generate full solution
+  function generatePuzzle(difficulty = 'medium') {
+    setMessage('Generating puzzle...');
     const solution = generateFullSolution();
-    // clone
-    const puzzle = deepCopyGridNumbers(solution);
+    const puzzle = deepCopyNumbers(solution);
+    const diff = DIFF[difficulty] || DIFF.medium;
+    const target = Math.floor(Math.random() * (diff.maxClues - diff.minClues + 1)) + diff.minClues;
 
-    // determine target clues
-    const diff = DIFFICULTY[difficulty] || DIFFICULTY.medium;
-    const targetClues = Math.floor(Math.random() * (diff.maxClues - diff.minClues + 1)) + diff.minClues;
+    const coords = [];
+    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) coords.push({ r, c });
+    shuffle(coords);
 
-    // coordinates list randomized
-    const cells = [];
-    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) cells.push({ r, c });
-    shuffleArray(cells);
-
-    // remove numbers until we hit target clues, ensure uniqueness by checking solution count
     let currentClues = 81;
-    let idx = 0;
-
-    while (currentClues > targetClues && idx < cells.length) {
-      const { r, c } = cells[idx++];
-      if (puzzle[r][c] === 0) continue;
+    let i = 0;
+    while (currentClues > target && i < coords.length) {
+      const { r, c } = coords[i++];
       const backup = puzzle[r][c];
       puzzle[r][c] = 0;
-
-      // copy for checking
-      const copy = puzzle.map(row => row.slice());
+      const copy = puzzle.map(rr => rr.slice());
       const solCount = countSolutions(copy, 2);
       if (solCount !== 1) {
-        // not unique, revert
-        puzzle[r][c] = backup;
-        continue;
+        puzzle[r][c] = backup; // revert
       } else {
         currentClues--;
       }
-
-      if (typeof progressCallback === 'function') {
-        progressCallback({ currentClues, targetClues });
-      }
     }
-
+    setMessage('', 50);
     return { puzzle, solution };
   }
 
   /* -----------------------------
-     Public actions: new game / reset / check / solve / save / load
+     Public actions
      ----------------------------- */
-  function newGame(difficulty = 'medium') {
+  function startNewGame(difficulty = 'medium') {
     stopTimer();
-    setMessage('Generating puzzle — please wait...', 3000);
-    // small delay to allow UI update
+    setMessage('Preparing new puzzle — please wait...', 3000);
     setTimeout(() => {
       const { puzzle, solution } = generatePuzzle(difficulty);
-      // set models
-      grid = numbersToGridModel(puzzle);
-      initialGrid = JSON.parse(JSON.stringify(grid, replacerForSet)); // deep clone handling sets
-      solutionGrid = deepCopyGridNumbers(solution);
-      elapsedSeconds = 0;
-      mistakes = 0;
-      renderBoardFromModel();
+      grid = numbersToModel(puzzle);
+      initialGrid = cloneGridModel(grid);
+      solutionGrid = deepCopyNumbers(solution);
+      elapsed = 0;
+      renderFromModel();
       startTimer();
-      setMessage(`New puzzle (${difficulty}). Good luck!`, 2200);
-    }, 40);
+      setMessage(`New ${difficulty} puzzle ready. Use digit-bank to fill.`, 2200);
+    }, 50);
   }
 
-  function replacerForSet(key, value) {
-    // replace Set with array for serialization
-    if (value instanceof Set) {
-      return { __set: Array.from(value) };
-    }
-    return value;
-  }
-  function reviverForSet(key, value) {
-    if (value && value.__set) return new Set(value.__set);
-    return value;
+  function cloneGridModel(g) {
+    return g.map(row => row.map(cell => ({ value: cell.value, given: cell.given, notes: new Set(Array.from(cell.notes)) })));
   }
 
   function resetToInitial() {
     if (!initialGrid) return;
     stopTimer();
-    grid = initialGrid.map(row => row.map(cell => ({ value: cell.value, given: cell.given, notes: new Set(cell.notes ? Array.from(cell.notes) : []) })));
-    elapsedSeconds = 0;
-    mistakes = 0;
-    renderBoardFromModel();
+    grid = cloneGridModel(initialGrid);
+    elapsed = 0;
+    renderFromModel();
     startTimer();
     setMessage('Reset to initial puzzle.');
   }
 
-  function checkBoard() {
-    // check all user-filled cells; mark invalid ones
-    const numbers = gridToNumbers(grid);
-    let invalidFound = false;
-    for (let r = 0; r < 9; r++) {
-      for (let c = 0; c < 9; c++) {
-        const val = numbers[r][c];
-        const wrapper = getWrapper(r, c);
-        const input = wrapper.querySelector('.cell');
-
-        input.classList.remove('invalid', 'correct');
-
-        if (val === 0) continue;
-        // Temporarily remove to test uniqueness in context
-        numbers[r][c] = 0;
-        const ok = isValidPlacement(numbers, r, c, val);
-        numbers[r][c] = val;
-        if (!ok) {
-          input.classList.add('invalid');
-          invalidFound = true;
-        } else {
-          input.classList.add('correct');
-          setTimeout(() => input.classList.remove('correct'), 900);
-        }
-      }
-    }
-    if (invalidFound) {
-      mistakes++;
-      mistakesEl.textContent = `Mistakes: ${mistakes}`;
-      setMessage('Be careful — some numbers conflict.', 2500);
-    } else {
-      setMessage('No conflicts detected (so far).', 1800);
-    }
-  }
-
-  function solveAndAnimate(speedMs = 40) {
+  function solveInstant() {
     if (!solutionGrid) return;
     stopTimer();
-    solvingAnimationInProgress = true;
-    const flat = [];
-    for (let r = 0; r < 9; r++) {
-      for (let c = 0; c < 9; c++) {
-        flat.push({ r, c, val: solutionGrid[r][c] });
-      }
-    }
-    let i = 0;
-    solveAnimationTimer = setInterval(() => {
-      if (i >= flat.length) {
-        clearInterval(solveAnimationTimer);
-        solvingAnimationInProgress = false;
-        setMessage('Solved (filled).');
-        return;
-      }
-      const { r, c, val } = flat[i++];
-      grid[r][c].value = val;
+    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) {
+      grid[r][c].value = solutionGrid[r][c];
       grid[r][c].notes.clear();
-      renderBoardFromModel();
-    }, speedMs);
+    }
+    renderFromModel();
+    setMessage('Puzzle solved.');
+    maybeSolved(true);
   }
 
   /* -----------------------------
@@ -672,210 +498,228 @@
   function startTimer() {
     stopTimer();
     timerInterval = setInterval(() => {
-      elapsedSeconds++;
-      timerEl.textContent = formatTime(elapsedSeconds);
+      elapsed++;
+      timerEl.textContent = formatTime(elapsed);
     }, 1000);
   }
 
   function stopTimer() {
-    if (timerInterval) {
-      clearInterval(timerInterval);
-      timerInterval = null;
-    }
-    if (solveAnimationTimer) {
-      clearInterval(solveAnimationTimer);
-      solveAnimationTimer = null;
-    }
+    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
   }
 
   /* -----------------------------
-     Save / Load localStorage
+     Save / Load
      ----------------------------- */
+  function replacer(key, value) {
+    if (value instanceof Set) return { __set: Array.from(value) };
+    return value;
+  }
+  function reviver(key, value) {
+    if (value && value.__set) return new Set(value.__set);
+    return value;
+  }
+
   function saveProgress() {
-    // Save grid, solution, elapsed, mistakes, difficulty
-    const data = {
-      grid: grid,
-      solution: solutionGrid,
-      elapsedSeconds,
-      mistakes,
-      difficulty: difficultySel.value,
+    const payload = {
+      grid,
+      solutionGrid,
+      elapsed,
+      difficulty: selDifficulty.value,
       timestamp: Date.now()
     };
-    // custom serializer for Set
-    const str = JSON.stringify(data, replacerForSet);
-    localStorage.setItem(LS_KEYS.SAVED, str);
-    setMessage('Game saved locally.');
+    try {
+      localStorage.setItem(LS_KEYS.SAVED, JSON.stringify(payload, replacer));
+      setMessage('Game saved locally.');
+    } catch (err) {
+      console.error(err);
+      setMessage('Failed to save.');
+    }
   }
 
   function loadProgress() {
     const raw = localStorage.getItem(LS_KEYS.SAVED);
-    if (!raw) {
-      setMessage('No saved game found.');
-      return;
-    }
+    if (!raw) { setMessage('No saved game.'); return; }
     try {
-      const obj = JSON.parse(raw, reviverForSet);
-      // reconstruct grid model
-      grid = obj.grid.map(row => row.map(cell => ({
-        value: cell.value === null ? null : cell.value,
-        given: !!cell.given,
-        notes: cell.notes instanceof Set ? new Set(Array.from(cell.notes)) : new Set()
-      })));
-      initialGrid = JSON.parse(JSON.stringify(grid, replacerForSet));
-      solutionGrid = obj.solution ? deepCopyGridNumbers(obj.solution) : null;
-      elapsedSeconds = obj.elapsedSeconds || 0;
-      mistakes = obj.mistakes || 0;
-      renderBoardFromModel();
+      const obj = JSON.parse(raw, reviver);
+      // reconstruct grid model (ensure sets)
+      grid = obj.grid.map(row => row.map(cell => ({ value: cell.value === null ? null : cell.value, given: !!cell.given, notes: (cell.notes instanceof Set) ? new Set(Array.from(cell.notes)) : new Set() })));
+      initialGrid = cloneGridModel(grid);
+      solutionGrid = obj.solutionGrid ? deepCopyNumbers(obj.solutionGrid) : null;
+      elapsed = obj.elapsed || 0;
+      renderFromModel();
       startTimer();
       setMessage('Saved game loaded.');
     } catch (err) {
       console.error(err);
-      setMessage('Failed to load saved game.');
+      setMessage('Failed to load save.');
     }
   }
 
   /* -----------------------------
-     Completion detection & leaderboard
+     Leaderboard (local)
      ----------------------------- */
-  function isSolvedModel() {
-    const numbers = gridToNumbers(grid);
-    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) if (numbers[r][c] === 0) return false;
-    // quick validity check
-    const copy = numbers.map(row => row.slice());
-    return solveSudoku(copy) === true;
-  }
-
-  function onPuzzleSolved() {
-    stopTimer();
-    setMessage(`Puzzle solved in ${formatTime(elapsedSeconds)}!`);
-    // store result to leaderboard
-    const leadersRaw = localStorage.getItem(LS_KEYS.LEADER);
-    const leaders = leadersRaw ? JSON.parse(leadersRaw) : [];
-    const entry = {
-      time: elapsedSeconds,
-      difficulty: difficultySel.value,
-      date: new Date().toISOString()
-    };
-    leaders.push(entry);
-    // keep only top 10 fastest per local
-    leaders.sort((a, b) => a.time - b.time);
-    const trimmed = leaders.slice(0, 10);
-    localStorage.setItem(LS_KEYS.LEADER, JSON.stringify(trimmed));
+  function recordCompletion() {
+    const raw = localStorage.getItem(LS_KEYS.LEAD);
+    const arr = raw ? JSON.parse(raw) : [];
+    arr.push({ time: elapsed, difficulty: selDifficulty.value, date: new Date().toISOString() });
+    arr.sort((a,b)=>a.time-b.time);
+    localStorage.setItem(LS_KEYS.LEAD, JSON.stringify(arr.slice(0,10)));
     renderLeaderboard();
   }
 
   function renderLeaderboard() {
-    const raw = localStorage.getItem(LS_KEYS.LEADER);
-    const leaders = raw ? JSON.parse(raw) : [];
-    leaderboardList.innerHTML = '';
-    leaders.forEach((l, i) => {
+    const raw = localStorage.getItem(LS_KEYS.LEAD);
+    const arr = raw ? JSON.parse(raw) : [];
+    leaderList.innerHTML = '';
+    arr.forEach(it => {
       const li = document.createElement('li');
-      li.textContent = `${formatTime(l.time)} — ${l.difficulty} — ${new Date(l.date).toLocaleString()}`;
-      leaderboardList.appendChild(li);
+      li.textContent = `${formatTime(it.time)} — ${it.difficulty} — ${new Date(it.date).toLocaleString()}`;
+      leaderList.appendChild(li);
     });
-    // show panel only if entries exist
-    const panel = document.querySelector(SELECTORS.leaderboardPanel);
-    if (panel) panel.style.display = leaders.length ? 'block' : 'none';
   }
 
   /* -----------------------------
-     Helper: find conflicts for current grid (list cells that conflict)
+     Completion check
      ----------------------------- */
-  function findConflicts() {
-    const numbers = gridToNumbers(grid);
-    const conflicts = [];
-    for (let r = 0; r < 9; r++) {
-      for (let c = 0; c < 9; c++) {
-        const v = numbers[r][c];
-        if (v === 0) continue;
-        numbers[r][c] = 0;
-        if (!isValidPlacement(numbers, r, c, v)) {
-          conflicts.push({ r, c });
-        }
-        numbers[r][c] = v;
-      }
+  function maybeSolved(quiet = false) {
+    // quick check: any zeros?
+    const nums = gridToNumbers(grid);
+    for (let r=0;r<9;r++) for (let c=0;c<9;c++) if (nums[r][c] === 0) return false;
+    // validate full solution
+    const copy = deepCopyNumbers(nums);
+    if (solveSudoku(copy)) {
+      stopTimer();
+      if (!quiet) setMessage(`Solved in ${formatTime(elapsed)}!`);
+      recordCompletion();
+      return true;
+    } else {
+      // some conflict
+      autoCheckAndPostProcess();
+      return false;
     }
-    return conflicts;
   }
 
   /* -----------------------------
-     UI Bindings (top-level buttons & keyboard)
+     Digit bank handlers
      ----------------------------- */
-  function wireUpUI() {
-    newGameBtn.addEventListener('click', () => {
-      newGame(difficultySel.value);
-    });
-
-    resetBtn.addEventListener('click', () => {
-      resetToInitial();
-    });
-
-    checkBtn.addEventListener('click', () => {
-      checkBoard();
-    });
-
-    solveBtn.addEventListener('click', () => {
-      if (confirm('Selesaikan papan sekarang? Ini akan mengisi semua kotak.')) {
-        solveAndAnimate(18);
+  function updateDigitCounts(animate = false) {
+    const counts = Array(10).fill(9);
+    const nums = gridToNumbers(grid);
+    for (let r=0;r<9;r++) for (let c=0;c<9;c++){
+      const v = nums[r][c];
+      if (v >=1 && v <=9) counts[v]--;
+    }
+    const btns = digitBank.querySelectorAll('.digit-btn');
+    btns.forEach(b=>{
+      const d = Number(b.dataset.digit);
+      const span = b.querySelector('.count');
+      if (span) {
+        span.textContent = String(Math.max(0, counts[d]));
+        if (animate) {
+          span.classList.remove('count-update');
+          // force reflow
+          void span.offsetWidth;
+          span.classList.add('count-update');
+        }
       }
+      b.disabled = counts[d] <= 0;
+      b.setAttribute('aria-disabled', b.disabled ? 'true' : 'false');
+    });
+  }
+
+  function handleDigitPress(d) {
+    if (!selected) { setMessage('Pilih sebuah kotak dulu.'); return; }
+    const { r, c } = selected;
+    const cell = grid[r][c];
+    if (cell.given) { setMessage('Kotak ini adalah given — tidak bisa diubah.'); return; }
+    if (pencilMode) {
+      toggleNoteAt(r, c, d);
+    } else {
+      setValueAt(r, c, d);
+      // update digit counts animate
+      updateDigitCounts(true);
+    }
+  }
+
+  function handleErase() {
+    if (!selected) { setMessage('Pilih sebuah kotak dulu.'); return; }
+    const { r, c } = selected;
+    eraseAt(r, c);
+    updateDigitCounts(true);
+  }
+
+  /* -----------------------------
+     Keyboard navigation (NO numeric typing)
+     ----------------------------- */
+  document.addEventListener('keydown', (e) => {
+    if (!selected) return;
+    const { r, c } = selected;
+    if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) {
+      e.preventDefault();
+      let nr = r, nc = c;
+      if (e.key === 'ArrowUp') nr = (r + 8) % 9;
+      if (e.key === 'ArrowDown') nr = (r + 1) % 9;
+      if (e.key === 'ArrowLeft') nc = (c + 8) % 9;
+      if (e.key === 'ArrowRight') nc = (c + 1) % 9;
+      selectCell(nr, nc);
+      const w = getWrapper(nr, nc);
+      if (w) w.querySelector('.cell').focus({preventScroll:true});
+    } else if (e.key === 'Escape') {
+      selected = null;
+      clearHighlights();
+      document.activeElement && document.activeElement.blur();
+    } else if (e.key === 'Delete' || e.key === 'Backspace') {
+      // allow erase via keyboard for convenience
+      e.preventDefault();
+      handleErase();
+    }
+  });
+
+  /* -----------------------------
+     UI wiring
+     ----------------------------- */
+  function wireUI() {
+    btnNew.addEventListener('click', ()=> startNewGame(selDifficulty.value));
+    btnReset.addEventListener('click', resetToInitial);
+    btnSolve.addEventListener('click', ()=> {
+      if (confirm('Selesaikan papan sekarang?')) solveInstant();
     });
 
-    togglePencilBtn.addEventListener('click', () => {
-      setPencilMode(!pencilMode);
-      setMessage(`Pencil mode ${pencilMode ? 'ON' : 'OFF'}`, 1200);
+    togglePencilBtn.addEventListener('click', ()=> {
+      setPencil(!pencilMode);
+      setMessage(`Pencil ${pencilMode ? 'ON' : 'OFF'}`, 900);
     });
 
-    toggleThemeBtn.addEventListener('click', () => {
+    toggleThemeBtn.addEventListener('click', ()=> {
       const root = document.documentElement;
       const isDark = root.getAttribute('data-theme') === 'dark' || root.classList.contains('dark');
       if (isDark) {
         root.removeAttribute('data-theme');
         root.classList.remove('dark');
-        toggleThemeBtn.setAttribute('aria-pressed', 'false');
+        toggleThemeBtn.setAttribute('aria-pressed','false');
       } else {
-        root.setAttribute('data-theme', 'dark');
-        toggleThemeBtn.setAttribute('aria-pressed', 'true');
+        root.setAttribute('data-theme','dark');
+        toggleThemeBtn.setAttribute('aria-pressed','true');
       }
     });
 
-    saveBtn.addEventListener('click', saveProgress);
-    loadBtn.addEventListener('click', loadProgress);
+    btnSave.addEventListener('click', saveProgress);
+    btnLoad.addEventListener('click', loadProgress);
 
-    // Global keyboard for number typing even when board not focused
-    document.addEventListener('keydown', (e) => {
-      if (!selectedCell) return;
-      if (solvingAnimationInProgress) return;
-      const { r, c } = selectedCell;
-      if (e.key >= '1' && e.key <= '9') {
-        e.preventDefault();
-        if (pencilMode) {
-          toggleNote(r, c, Number(e.key));
-        } else {
-          setCellValue(r, c, Number(e.key), { user: true });
-          // after user sets a number, check solved?
-          if (isSolvedModel()) onPuzzleSolved();
-        }
-      } else if (e.key === 'Backspace' || e.key === 'Delete') {
-        e.preventDefault();
-        if (!grid[r][c].given) setCellValue(r, c, null, { user: true });
-      } else if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) {
-        // navigation handled elsewhere if inputs focused; handle for when not focused
-        e.preventDefault();
-        const pos = movePos({ r, c }, e.key);
-        focusCell(pos.r, pos.c);
-      } else if (e.key === 'Escape') {
-        // quick unselect
-        selectedCell = null;
-        clearHighlights();
-        document.activeElement && document.activeElement.blur();
-      } else if (e.key === 'Enter') {
-        // quick check
-        checkBoard();
+    // digit-bank delegation
+    digitBank.addEventListener('click', (e) => {
+      const btn = e.target.closest('.digit-btn');
+      if (btn && !btn.disabled) {
+        const d = Number(btn.dataset.digit);
+        handleDigitPress(d);
+      }
+      if (e.target.closest('#erase-btn')) {
+        handleErase();
       }
     });
   }
 
-  function setPencilMode(flag) {
+  function setPencil(flag) {
     pencilMode = !!flag;
     togglePencilBtn.setAttribute('aria-pressed', pencilMode ? 'true' : 'false');
     togglePencilBtn.classList.toggle('active', pencilMode);
@@ -886,32 +730,36 @@
      ----------------------------- */
   function init() {
     buildBoardDOM();
-    renderBoardFromModel();
-    wireUpUI();
+    renderFromModel();
+    wireUI();
     renderLeaderboard();
 
-    // auto-generate a medium puzzle on first load
-    setMessage('Ready. Generating a puzzle...');
-    setTimeout(() => newGame(difficultySel.value), 60);
+    // Try to load saved game; otherwise create a new one
+    const saved = localStorage.getItem(LS_KEYS.SAVED);
+    if (saved) {
+      // don't auto-load — offer to user via load button; create new puzzle
+      startNewGame(selDifficulty.value);
+    } else {
+      startNewGame(selDifficulty.value);
+    }
 
-    // small accessibility: announce helper
-    setTimeout(() => setMessage('Use number keys to fill, double-click to toggle pencil mode.'), 2000);
+    // slight accessibility hint
+    setTimeout(()=> setMessage('Klik kotak, lalu pilih angka di bar bawah. Double-click untuk pencil.'), 1500);
   }
 
   /* -----------------------------
-     Start!
-     ----------------------------- */
-  init();
-
-  /* -----------------------------
-     Expose a few debug functions for console (optional)
+     Expose some helpers for debugging
      ----------------------------- */
   window._sudoku = {
     getGrid: () => grid,
     getNumbers: () => gridToNumbers(grid),
     getSolution: () => solutionGrid,
     generatePuzzle,
-    solveSudoku: (nums) => solveSudoku(nums)
+    solveSudoku,
+    setPencil
   };
+
+  // Start
+  init();
 
 })();

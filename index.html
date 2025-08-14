@@ -6,14 +6,20 @@
   <meta name="description" content="Sudoku — static HTML/CSS/JS. Ringan, responsif, aksesibel. Board 9×9, difficulty, timer, save progress." />
   <title>Sudoku — Static</title>
 
-  <!-- Link ke file CSS -->
+  <!-- Link ke file CSS terpisah -->
   <link rel="stylesheet" href="style.css">
 
-  <!-- Favicon minimal (base64 tiny) - optional -->
+  <!-- Minimal favicon -->
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 48 48%22><text y=%2236%22 font-size=%2232%22>▢</text></svg>">
 
-  <!-- Script utama (defer supaya DOM siap) -->
+  <!-- Script utama terpisah (defer supaya DOM siap) -->
   <script defer src="script.js"></script>
+
+  <!-- Baseline kecil supaya .hidden benar-benar tersembunyi sebelum style.css dimuat -->
+  <style>
+    .hidden{display:none!important;}
+    .visually-hidden{position:absolute!important;height:1px;width:1px;overflow:hidden;clip:rect(1px,1px,1px,1px);white-space:nowrap;}
+  </style>
 </head>
 <body>
   <header class="site-header">
@@ -29,7 +35,10 @@
         </select>
 
         <button id="new-game" type="button" title="New Game" aria-label="Permainan baru">New Game</button>
-        <button id="check" type="button" title="Check" aria-label="Periksa jawaban">Check</button>
+
+        <!-- Tombol Check dihilangkan dari UI (tetap ada di DOM untuk kompatibilitas script.js jika diperlukan) -->
+        <button id="check" class="hidden" type="button" title="Check" aria-label="Periksa jawaban">Check</button>
+
         <button id="solve" type="button" title="Solve" aria-label="Selesaikan papan">Solve</button>
         <button id="reset" type="button" title="Reset" aria-label="Reset ke kondisi awal">Reset</button>
 
@@ -40,53 +49,99 @@
   </header>
 
   <main class="container">
-    <!-- Informasi singkat & hint -->
+    <!-- Info bar -->
     <section class="info-bar" aria-hidden="false">
-      <div class="status">
-        <span id="timer" aria-live="polite">00:00</span>
-        <span id="mistakes" aria-live="polite">Mistakes: 0</span>
+      <div class="status" role="status" aria-live="polite">
+        <span id="timer">00:00</span>
+        <!-- Mistakes disembunyikan (dipertahankan di DOM agar script.js yang mencari elemen tidak error) -->
+        <span id="mistakes" class="hidden" aria-live="polite">Mistakes: 0</span>
       </div>
-      <div class="instructions" id="instructions" aria-hidden="false">
-        <small>Gunakan angka 1–9. Klik dua kali untuk toggle note/pencil. Tekan Backspace untuk hapus.</small>
+      <div class="instructions" id="instructions">
+        <small>Klik kotak untuk memilih, lalu pilih angka dari bar di bawah. Double-click kotak untuk toggle pencil mode. Sistem otomatis memeriksa konflik.</small>
       </div>
     </section>
 
-    <!-- Board container: akan diisi / di-manage oleh script.js -->
+    <!-- Game area -->
     <section id="game" class="game" aria-label="Sudoku game" role="application">
-      <!-- grid akan di-render oleh JS — container kosong di HTML untuk progressive enhancement -->
+      <!-- Board: script.js akan merender 9x9 .cell-wrapper di dalam elemen ini -->
       <div id="sudoku-board" class="sudoku-board" role="grid" aria-label="Papan Sudoku 9 per 9" tabindex="0">
-        <!--
-          Struktur DOM expected by script.js:
-          - 81 elemen input (type="text") dengan class "cell"
-          - setiap cell mempunyai data-row (0..8), data-col (0..8), data-box (0..8)
-          - initial givens diberi attribute readonly dan class "given"
-          - user-editable cells: inputmode="numeric" maxlength="1" pattern="[1-9]"
-          Example (JS dapat clone template di bawah):
-        -->
+        <!-- Kosong — akan diisi oleh script.js -->
       </div>
 
-      <!-- Template cell: script.js bisa clone ini untuk membuat 81 cell -->
+      <!-- Template (progressive enhancement) -->
       <template id="cell-template">
-        <input
-          class="cell"
-          inputmode="numeric"
-          pattern="[1-9]"
-          maxlength="1"
-          autocomplete="off"
-          aria-label="Kosong"
-          type="text"
-          value=""
-        />
+        <div class="cell-wrapper" role="gridcell" data-row="0" data-col="0" data-box="0">
+          <input
+            class="cell"
+            type="text"
+            inputmode="numeric"
+            pattern="[1-9]"
+            maxlength="1"
+            autocomplete="off"
+            aria-label="Kosong"
+            readonly
+          />
+          <div class="notes" aria-hidden="true">
+            <!-- 9 placeholders untuk catatan (pencil) -->
+            <div class="note" data-n="1"></div><div class="note" data-n="2"></div><div class="note" data-n="3"></div>
+            <div class="note" data-n="4"></div><div class="note" data-n="5"></div><div class="note" data-n="6"></div>
+            <div class="note" data-n="7"></div><div class="note" data-n="8"></div><div class="note" data-n="9"></div>
+          </div>
+        </div>
       </template>
 
-      <!-- area pesan / live region -->
+      <!-- Live message -->
       <div id="message" class="message" role="status" aria-live="polite"></div>
+
+      <!-- Digit bank: tombol angka 1-9 + counter sisa -->
+      <div id="digit-bank" class="digit-bank" role="toolbar" aria-label="Pilih angka">
+        <button class="digit-btn" data-digit="1" aria-pressed="false" title="Angka 1">
+          <span class="digit">1</span>
+          <span class="count" aria-hidden="true">9</span>
+        </button>
+        <button class="digit-btn" data-digit="2" aria-pressed="false" title="Angka 2">
+          <span class="digit">2</span>
+          <span class="count" aria-hidden="true">9</span>
+        </button>
+        <button class="digit-btn" data-digit="3" aria-pressed="false" title="Angka 3">
+          <span class="digit">3</span>
+          <span class="count" aria-hidden="true">9</span>
+        </button>
+        <button class="digit-btn" data-digit="4" aria-pressed="false" title="Angka 4">
+          <span class="digit">4</span>
+          <span class="count" aria-hidden="true">9</span>
+        </button>
+        <button class="digit-btn" data-digit="5" aria-pressed="false" title="Angka 5">
+          <span class="digit">5</span>
+          <span class="count" aria-hidden="true">9</span>
+        </button>
+        <button class="digit-btn" data-digit="6" aria-pressed="false" title="Angka 6">
+          <span class="digit">6</span>
+          <span class="count" aria-hidden="true">9</span>
+        </button>
+        <button class="digit-btn" data-digit="7" aria-pressed="false" title="Angka 7">
+          <span class="digit">7</span>
+          <span class="count" aria-hidden="true">9</span>
+        </button>
+        <button class="digit-btn" data-digit="8" aria-pressed="false" title="Angka 8">
+          <span class="digit">8</span>
+          <span class="count" aria-hidden="true">9</span>
+        </button>
+        <button class="digit-btn" data-digit="9" aria-pressed="false" title="Angka 9">
+          <span class="digit">9</span>
+          <span class="count" aria-hidden="true">9</span>
+        </button>
+
+        <!-- Erase control -->
+        <button id="erase-btn" class="erase-btn" title="Hapus isi sel" aria-label="Hapus">⌫</button>
+      </div>
     </section>
 
-    <!-- Optional: leaderboard / local save -->
+    <!-- Side panel: save/load + leaderboard -->
     <aside class="side-panel" aria-label="Panel">
       <button id="save-progress" type="button">Save</button>
       <button id="load-progress" type="button">Load</button>
+
       <div id="leaderboard" class="leaderboard" aria-hidden="true">
         <strong>Leaderboard lokal</strong>
         <ol id="leader-list"></ol>
@@ -100,38 +155,25 @@
     </div>
   </footer>
 
-  <!-- No-JS fallback -->
+  <!-- No-JS fallback message -->
   <noscript>
     <div class="noscript-warning" role="alert">
       JavaScript diperlukan untuk menjalankan game Sudoku. Aktifkan JavaScript lalu muat ulang halaman.
     </div>
   </noscript>
 
-  <!-- Inline documentation comments for developer (tidak tampil) -->
   <!--
-    JS hooks (ids/classes) to implement in script.js:
-      - #sudoku-board : container grid
-      - #cell-template : <template> untuk clone cell
-      - #new-game, #check, #solve, #reset : tombol kontrol
-      - #difficulty : select difficulty
-      - #timer : text timer
-      - #mistakes : mistake counter
-      - #toggle-pencil : toggle pencil/note mode (manage aria-pressed)
-      - #toggle-theme : switch theme (manage aria-pressed)
-      - #message : status messages (aria-live)
-      - #save-progress / #load-progress : optional localstorage handlers
-    Data model recommended:
-      - store grid as 9x9 array of objects {value:number|null, given:boolean, notes:Set<number>}
-      - use data-row/data-col/data-box on DOM cells for quick lookup if you render static 81 inputs
+    Catatan developer (komentar, tidak tampil):
+    - Simpan styling di file terpisah: style.css
+    - Simpan logic di file terpisah: script.js
+    - script.js diharapkan:
+        * merender 81 .cell-wrapper di #sudoku-board (atau clone #cell-template)
+        * menambahkan input .cell di setiap wrapper (readonly attribute boleh dipertahankan)
+        * menambahkan event listener untuk klik pada .digit-btn untuk mengisi angka
+        * mengupdate .digit-btn .count sesuai jumlah digit yang tersisa
+        * melakukan auto-check setelah pengisian (karena tombol Check disembunyikan)
+    - Jika mau, aku bisa kirim style.css atau script.js berikutnya.
   -->
 
-  <style>
-    /* Minimal SCCS-safe baseline for better first paint while style.css loads.
-       You can remove this if style.css includes full resets. */
-    :root{--container-padding:1rem;font-family:system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;}
-    .container{max-width:920px;margin:0 auto;padding:var(--container-padding);}
-    .visually-hidden{position:absolute!important;height:1px;width:1px;overflow:hidden;clip:rect(1px,1px,1px,1px);white-space:nowrap;}
-    .sudoku-board{display:grid;gap:4px; /* final layout handled in style.css */padding:1rem}
-  </style>
 </body>
 </html>

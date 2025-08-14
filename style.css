@@ -1,46 +1,49 @@
 /* ==========================================================================
    Sudoku — style.css
-   - Modern, responsive, accessible
-   - Animations for interactions
-   - Theme support (light/dark) via [data-theme="dark"] on <body> or .dark class
-   - Works with markup: .sudoku-board, .cell, .given, .cell-wrapper, .notes
+   - Complete stylesheet for the provided index.html
+   - Responsive, animated, accessible
+   - Theme support via document.documentElement.setAttribute('data-theme','dark') or .dark
    ========================================================================== */
 
 /* -------------------------
-   Root variables / theme
+   Root variables (themeable)
    ------------------------- */
 :root{
   --bg: #f6f7fb;
   --panel: #ffffff;
   --muted: #6b7280;
   --text: #0f172a;
-  --accent: #7c3aed;        /* purple */
-  --accent-2: #06b6d4;      /* teal */
+  --accent: #7c3aed;        /* primary */
+  --accent-2: #06b6d4;      /* secondary */
   --danger: #ef4444;
   --success: #10b981;
   --glass: rgba(255,255,255,0.6);
-  --cell-bg: #fff;
+  --cell-bg: #ffffff;
   --cell-border: rgba(15,23,42,0.06);
-  --given-bg: linear-gradient(180deg, #eef2ff, #f8f9ff);
+  --given-bg: linear-gradient(180deg,#eef2ff,#f8f9ff);
   --note-text: #9ca3af;
-  --shadow-sm: 0 1px 2px rgba(2,6,23,0.06);
-  --shadow-md: 0 6px 18px rgba(2,6,23,0.08);
+  --shadow-sm: 0 4px 12px rgba(2,6,23,0.06);
+  --shadow-md: 0 10px 30px rgba(2,6,23,0.08);
   --gap: 8px;
   --thick-line: 3px;
-  --cell-size: clamp(40px, 6.2vw, 72px);
-  --radius: 10px;
+  --cell-min: 40px;
+  --cell-max: 78px;
+  --cell-size: clamp(var(--cell-min), 6.4vw, var(--cell-max));
+  --radius: 12px;
   --transition-fast: 160ms;
-  --transition: 280ms;
-  --focus-glow: 0 8px 28px rgba(124,58,237,0.12);
+  --transition: 300ms;
+  --focus-glow: 0 10px 28px rgba(124,58,237,0.12);
   --glass-border: rgba(15,23,42,0.06);
   --ui-scale: 1;
+  --digit-btn-size: 56px;
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
 }
 
 /* Dark theme override */
 :root[data-theme="dark"], :root.dark {
   --bg: #071022;
   --panel: #071827;
-  --muted: #94a3b8;
+  --muted: #9aa7b8;
   --text: #e6eef8;
   --accent: #8b5cf6;
   --accent-2: #06b6d4;
@@ -49,10 +52,10 @@
   --glass: rgba(255,255,255,0.02);
   --cell-bg: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
   --cell-border: rgba(255,255,255,0.04);
-  --given-bg: linear-gradient(180deg, rgba(139,92,246,0.07), rgba(139,92,246,0.02));
+  --given-bg: linear-gradient(180deg, rgba(139,92,246,0.06), rgba(139,92,246,0.02));
   --note-text: #9aa7b8;
-  --shadow-sm: 0 1px 2px rgba(2,6,23,0.3);
-  --shadow-md: 0 10px 30px rgba(2,6,23,0.6);
+  --shadow-sm: 0 6px 18px rgba(2,6,23,0.25);
+  --shadow-md: 0 14px 40px rgba(2,6,23,0.6);
 }
 
 /* -------------------------
@@ -62,8 +65,8 @@
 html,body{height:100%}
 body{
   margin:0;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
-  background: linear-gradient(180deg, var(--bg), color-mix(in srgb, var(--bg) 90%, var(--panel) 10%));
+  font-family: var(--font-sans);
+  background: linear-gradient(180deg, var(--bg), color-mix(in srgb, var(--bg) 88%, var(--panel) 12%));
   color:var(--text);
   -webkit-font-smoothing:antialiased;
   -moz-osx-font-smoothing:grayscale;
@@ -71,176 +74,106 @@ body{
   font-size:16px;
   display:flex;
   flex-direction:column;
-  align-items:stretch;
-  gap:12px;
+  gap:16px;
   padding:20px;
   transition: background var(--transition);
 }
 
-/* Utility container */
-.container{
-  max-width:1100px;
-  margin:0 auto;
-  width:100%;
-  padding:0 16px;
-}
+/* Utility */
+.container{max-width:1100px;margin:0 auto;padding:0 16px;width:100%}
+.visually-hidden{position:absolute!important;height:1px;width:1px;overflow:hidden;clip:rect(1px,1px,1px,1px);white-space:nowrap}
+.hidden{display:none!important}
 
 /* -------------------------
    Header & controls
    ------------------------- */
-.site-header{
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  gap:14px;
-}
+.site-header{display:flex;justify-content:center;align-items:center}
 .header-inner{
   display:flex;
   align-items:center;
   justify-content:space-between;
-  width:100%;
   gap:12px;
-  padding:8px;
-  background: linear-gradient(180deg, rgba(255,255,255,0.35), rgba(255,255,255,0.18));
-  border-radius: 14px;
+  width:100%;
+  padding:10px;
+  border-radius:14px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--panel) 96%, transparent), transparent);
+  border:1px solid var(--glass-border);
   box-shadow: var(--shadow-sm);
-  border: 1px solid var(--glass-border);
 }
-.title{
-  margin:0;
-  font-size:1.2rem;
-  font-weight:700;
-  letter-spacing: -0.02em;
-  display:flex;
-  align-items:center;
-  gap:10px;
-}
+.title{margin:0;font-size:1.15rem;font-weight:800;letter-spacing:-0.02em;display:flex;align-items:center;gap:10px}
 .title::before{
   content:"";
   display:inline-block;
-  width:36px;
-  height:36px;
-  border-radius:8px;
-  background: conic-gradient(from 210deg, var(--accent), var(--accent-2));
-  box-shadow: 0 6px 12px rgba(93, 63, 211, 0.12), inset 0 -6px 18px rgba(255,255,255,0.06);
+  width:36px;height:36px;border-radius:9px;
+  background: conic-gradient(from 210deg,var(--accent),var(--accent-2));
+  box-shadow: 0 6px 12px rgba(93,63,211,0.08), inset 0 -6px 18px rgba(255,255,255,0.04);
 }
 
-/* Controls group */
-.controls{
-  display:flex;
-  align-items:center;
-  gap:8px;
-  flex-wrap:wrap;
-}
-.controls select,
-.controls button{
+/* Controls */
+.controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.controls select, .controls button{
   background:var(--panel);
-  border: 1px solid var(--glass-border);
-  padding:8px 12px;
-  border-radius:8px;
-  font-weight:600;
-  cursor:pointer;
-  box-shadow: var(--shadow-sm);
-  transition: transform var(--transition-fast), box-shadow var(--transition);
+  border:1px solid var(--glass-border);
+  padding:8px 12px;border-radius:10px;font-weight:700;cursor:pointer;
+  box-shadow: var(--shadow-sm);transition:transform var(--transition-fast), box-shadow var(--transition);
   color:var(--text);
 }
 .controls select{appearance:none;padding-right:28px}
 .controls button:hover{transform:translateY(-3px)}
 .controls button:active{transform:translateY(0)}
 .controls button[aria-pressed="true"]{
-  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 10%, var(--panel) 90%), var(--accent));
-  color:white;
-  box-shadow: var(--focus-glow);
-  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  background: linear-gradient(180deg,color-mix(in srgb,var(--accent) 12%,var(--panel) 88%), var(--accent));
+  color:#fff;border-color:color-mix(in srgb,var(--accent) 60%,transparent);box-shadow:var(--focus-glow);
 }
 
-/* Make controls responsive */
+/* Responsive header */
 @media (max-width:640px){
   .header-inner{flex-direction:column;align-items:flex-start;padding:12px}
   .controls{width:100%;justify-content:flex-start}
 }
 
 /* -------------------------
-   Info bar (timer, mistakes)
+   Info bar (timer, instructions)
    ------------------------- */
 .info-bar{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:12px;
-  padding:12px;
-  background:var(--panel);
-  border-radius:12px;
-  border:1px solid var(--glass-border);
-  box-shadow:var(--shadow-sm);
+  display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;border-radius:12px;
+  border:1px solid var(--glass-border);background:var(--panel);box-shadow:var(--shadow-sm);
 }
-.status{
-  display:flex;
-  align-items:center;
-  gap:12px;
-  font-weight:700;
-}
-#timer{
-  background:linear-gradient(90deg, color-mix(in srgb, var(--accent) 10%, transparent), transparent);
-  padding:6px 10px;border-radius:8px;
-  min-width:72px;text-align:center;
-}
-#mistakes{color:var(--danger);padding:6px 10px;border-radius:8px;background:transparent;font-weight:700}
+.status{display:flex;gap:12px;align-items:center;font-weight:700}
+#timer{padding:6px 10px;border-radius:8px;min-width:72px;text-align:center;background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 8%,transparent),transparent)}
+.instructions small{color:var(--muted)}
 
 /* -------------------------
-   Layout: main / side
+   Main layout: board + side-panel
    ------------------------- */
-main.container{
-  display:grid;
-  grid-template-columns: 1fr 260px;
-  gap:16px;
-  align-items:start;
-}
-@media (max-width:980px){
-  main.container{grid-template-columns: 1fr}
-}
+main.container{display:grid;grid-template-columns:1fr 280px;gap:18px;align-items:start}
+@media (max-width:980px){ main.container{grid-template-columns:1fr} }
 
 /* -------------------------
-   Sudoku board: grid and overlay lines
+   Sudoku board container
    ------------------------- */
-.game{
-  background: transparent;
-  display:flex;
-  flex-direction:column;
-  gap:12px;
-}
-
-/* Board container: uses CSS grid for 9x9 */
+.game{display:flex;flex-direction:column;gap:14px}
 .sudoku-board{
-  --gap-size: 6px;
-  --thick: var(--thick-line);
+  --gap-size:8px; --thick: var(--thick-line);
   display:grid;
   grid-template-columns: repeat(9, var(--cell-size));
   grid-auto-rows: var(--cell-size);
   gap: var(--gap-size);
-  padding: calc(var(--gap-size) + 10px);
-  border-radius: 12px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--panel) 60%, var(--bg) 40%), var(--panel));
+  padding: calc(var(--gap-size) + 12px);
+  border-radius: 14px;
+  background: linear-gradient(180deg, color-mix(in srgb,var(--panel) 78%, var(--bg) 22%), var(--panel));
   box-shadow: var(--shadow-md);
   position:relative;
-  justify-content:center;
-  align-content:center;
-  width:fit-content;
-  max-width:100%;
-  margin:auto;
+  width: fit-content;
+  margin: 0 auto;
   transition: transform var(--transition), box-shadow var(--transition);
 }
 
-/* Thick 3x3 separators using pseudo-element overlay (keeps DOM simple) */
-.sudoku-board::before,
-.sudoku-board::after{
-  content:"";
-  position:absolute;
-  inset:0;
-  pointer-events:none;
+/* thick 3x3 separators using overlay gradients (keeps DOM simple) */
+.sudoku-board::before, .sudoku-board::after{
+  content:"";position:absolute;inset:0;pointer-events:none;opacity:0.98;
 }
 .sudoku-board::before{
-  /* Vertical thick lines at 33.333% and 66.666% */
   background-image:
     linear-gradient(to right,
       transparent calc(33.333% - var(--thick)/2),
@@ -252,11 +185,9 @@ main.container{
       rgba(15,23,42,0.06) calc(66.666% + var(--thick)/2),
       transparent calc(66.666% + var(--thick)/2)
     );
-  mix-blend-mode: multiply;
-  opacity:0.95;
+  mix-blend-mode:multiply;
 }
 .sudoku-board::after{
-  /* Horizontal thick lines at 33.333% and 66.666% */
   background-image:
     linear-gradient(to bottom,
       transparent calc(33.333% - var(--thick)/2),
@@ -268,254 +199,185 @@ main.container{
       rgba(15,23,42,0.06) calc(66.666% + var(--thick)/2),
       transparent calc(66.666% + var(--thick)/2)
     );
-  mix-blend-mode: multiply;
-  opacity:0.95;
+  mix-blend-mode:multiply;
 }
 
 /* -------------------------
-   Cell wrapper & input
-   - JS may render a .cell-wrapper element that contains the input .cell
-   - If you render inputs directly inside .sudoku-board, selectors still apply.
+   Cell wrapper + input
    ------------------------- */
-.sudoku-board .cell-wrapper,
+.cell-wrapper,
 .sudoku-board > input.cell,
 .sudoku-board > .cell {
   position:relative;
-  display:block;
-  border-radius: 8px;
-  background: var(--cell-bg);
-  border: 1px solid var(--cell-border);
-  box-shadow: var(--shadow-sm);
-  overflow:visible;
-  transition: transform var(--transition-fast), box-shadow var(--transition), border-color var(--transition);
   display:flex;
   align-items:center;
   justify-content:center;
+  border-radius:10px;
+  background: var(--cell-bg);
+  border:1px solid var(--cell-border);
+  box-shadow: var(--shadow-sm);
+  overflow:visible;
+  transition: transform var(--transition-fast), box-shadow var(--transition), border-color var(--transition);
 }
 
-/* Actual input inside wrapper */
+/* input styling */
 .cell{
-  -webkit-appearance:none;
-  appearance:none;
-  border: none;
-  outline: none;
-  background: transparent;
-  width:100%;
-  height:100%;
-  text-align:center;
-  font-weight:700;
-  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
-  font-size: clamp(1.05rem, 3.6vw, 2.2rem);
-  letter-spacing: 0.02em;
-  color: var(--text);
-  caret-color: transparent;
-  padding:0;
-  margin:0;
-  cursor: text;
-  user-select: none;
-  line-height: 1;
+  -webkit-appearance:none;appearance:none;border:none;outline:none;background:transparent;
+  width:100%;height:100%;text-align:center;font-weight:800;font-family:var(--font-sans);
+  font-size: clamp(1rem, 3.6vw, 2.2rem);letter-spacing:0.01em;color:var(--text);
+  caret-color: transparent;padding:0;margin:0;cursor:default;user-select:none;line-height:1;
 }
 
-/* Given (read-only) cells */
-.cell.given,
-.cell[readonly]{
+/* givens */
+.cell.given, .cell[readonly]{
   pointer-events:none;
   color: color-mix(in srgb, var(--text) 60%, var(--muted) 40%);
-  font-weight:800;
-  background: var(--given-bg);
-  opacity:0.98;
-  transform: translateY(0);
+  font-weight:900; background:var(--given-bg); opacity:0.98;
 }
 
-/* Hover & focus states */
-.cell-wrapper:hover, .cell:hover{ transform: translateY(-4px); box-shadow: var(--focus-glow); }
-.cell:focus{
-  transform: scale(1.02);
-  box-shadow: var(--focus-glow);
-  border-radius: 10px;
-}
-.cell:focus-visible{ outline: 3px solid color-mix(in srgb, var(--accent) 35%, transparent); outline-offset: 2px; }
+/* hover & focus */
+.cell-wrapper:hover{ transform: translateY(-4px); box-shadow: var(--focus-glow); }
+.cell:focus{ transform: scale(1.02); box-shadow: var(--focus-glow); border-radius:10px; }
+.cell:focus-visible{ outline: 3px solid color-mix(in srgb, var(--accent) 35%, transparent); outline-offset:2px; }
 
-/* Highlight row / column / block — JS should add .highlight-row etc */
-.cell-wrapper.highlight,
-.cell.highlight,
-.cell-wrapper.highlight-row,
-.cell-wrapper.highlight-col,
-.cell-wrapper.highlight-block{
-  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 6%, transparent), transparent);
-  border-color: color-mix(in srgb, var(--accent) 20%, var(--cell-border));
-  transform: translateY(-3px);
-}
+/* highlights (JS adds these classes) */
+.cell-wrapper.highlight-row, .cell-wrapper.highlight-col, .cell-wrapper.highlight-block,
+.cell.highlight { background: linear-gradient(180deg, color-mix(in srgb,var(--accent) 6%, transparent), transparent); border-color: color-mix(in srgb,var(--accent) 18%, var(--cell-border)); transform: translateY(-3px); }
 
-/* Wrong / correct visual feedback */
-.cell.invalid{
-  animation: wobble 420ms cubic-bezier(.36,.07,.19,.97);
-  border-color: color-mix(in srgb, var(--danger) 50%, transparent);
-  box-shadow: 0 6px 18px rgba(239,68,68,0.12);
-}
-.cell.correct{
-  border-color: color-mix(in srgb, var(--success) 60%, transparent);
-  box-shadow: 0 8px 24px rgba(16,185,129,0.12);
-  transform: translateY(-2px) scale(1.01);
-}
+/* invalid / correct feedback */
+.cell.invalid { animation: wobble 420ms cubic-bezier(.36,.07,.19,.97); border-color: color-mix(in srgb,var(--danger) 60%, transparent); box-shadow: 0 8px 22px rgba(239,68,68,0.12); }
+.cell.correct { border-color: color-mix(in srgb,var(--success) 60%, transparent); box-shadow: 0 8px 22px rgba(16,185,129,0.12); transform: translateY(-2px) scale(1.01); }
 
-/* small animation */
 @keyframes wobble {
-  0% { transform: translateX(0); }
-  20% { transform: translateX(-6px); }
-  40% { transform: translateX(5px); }
-  60% { transform: translateX(-3px); }
-  80% { transform: translateX(2px); }
-  100% { transform: translateX(0); }
+  0%{ transform: translateX(0) }
+  20%{ transform: translateX(-6px) }
+  40%{ transform: translateX(5px) }
+  60%{ transform: translateX(-3px) }
+  80%{ transform: translateX(2px) }
+  100%{ transform: translateX(0) }
 }
 
 /* -------------------------
-   Pencil/notes mode
-   - JS should create .notes inside .cell-wrapper when in pencil mode
-   - Each note is a tiny digit arranged in a 3x3 grid
+   Notes / pencil mode
    ------------------------- */
 .cell-wrapper .notes{
-  position:absolute;
-  inset:6px;
-  display:grid;
-  grid-template-columns: repeat(3, 1fr);
-  grid-auto-rows: 1fr;
-  gap:2px;
-  pointer-events:none;
-  align-items:center;
-  justify-items:center;
+  position:absolute;inset:6px;display:grid;grid-template-columns:repeat(3,1fr);
+  gap:3px;pointer-events:none;align-items:center;justify-items:center;
 }
-.cell-wrapper .notes .note{
-  font-size: clamp(0.5rem, 1.4vw, 0.9rem);
-  color: var(--note-text);
-  opacity:0.95;
-  user-select:none;
+.cell-wrapper .note{
+  font-size: clamp(0.52rem, 1.2vw, 0.9rem);
+  color:var(--note-text);opacity:0.96;user-select:none;font-weight:700;
 }
-
-/* When a real value exists, hide notes */
-.cell-wrapper.has-value .notes{ display:none; }
+.cell-wrapper.has-value .notes{ display:none }
 
 /* -------------------------
-   Message / live status
+   Message / live region
    ------------------------- */
 .message{
-  min-height:28px;
-  padding:8px 12px;
-  border-radius:8px;
-  background: linear-gradient(180deg, rgba(0,0,0,0.02), transparent);
-  border:1px solid var(--glass-border);
-  color:var(--muted);
-  font-weight:600;
-  display:flex;
-  align-items:center;
-  gap:8px;
+  min-height:32px;padding:8px 12px;border-radius:10px;background: linear-gradient(180deg, rgba(0,0,0,0.02), transparent);
+  border:1px solid var(--glass-border);color:var(--muted);font-weight:700;display:flex;align-items:center;gap:8px;
 }
 
 /* -------------------------
-   Side panel (save/load, leaderboard)
+   Digit bank (buttons 1-9 + erase)
+   ------------------------- */
+.digit-bank{
+  display:flex;flex-wrap:wrap;gap:10px;justify-content:center;align-items:center;padding:6px;
+  margin-top:6px;
+}
+.digit-btn, .erase-btn{
+  display:inline-flex;flex-direction:column;align-items:center;justify-content:center;
+  min-width:var(--digit-btn-size);min-height:var(--digit-btn-size);padding:8px;border-radius:12px;
+  border:1px solid var(--glass-border);background:var(--panel);cursor:pointer;font-weight:900;
+  box-shadow: var(--shadow-sm);transition: transform var(--transition-fast), box-shadow var(--transition), background var(--transition);
+}
+.digit-btn{ gap:4px; font-size:1.1rem; }
+.digit-btn .digit{ font-size:1.25rem; line-height:1 }
+.digit-btn .count{ font-size:0.75rem; color:var(--muted); font-weight:700 }
+
+/* pressed / active */
+.digit-btn:active, .erase-btn:active{ transform: translateY(2px) scale(.995) }
+.digit-btn[disabled]{ opacity:0.48; cursor:not-allowed; transform:none }
+
+/* visual highlight for currently selected digit (if needed) */
+.digit-btn[aria-pressed="true"]{ box-shadow: 0 10px 30px rgba(124,58,237,0.12); border-color: color-mix(in srgb,var(--accent) 60%, transparent); background: linear-gradient(180deg, color-mix(in srgb,var(--accent) 10%, var(--panel) 90%), var(--accent)); color:#fff }
+
+/* erase button distinct */
+.erase-btn{ min-width:64px; background: linear-gradient(180deg, rgba(255,240,240,0.9), rgba(255,240,240,0.6)); border-color: color-mix(in srgb,var(--danger) 18%, transparent); color:var(--danger) }
+
+/* small animation for count updates */
+.count-update {
+  display:inline-block;transform-origin:center;animation:count-pop 360ms cubic-bezier(.2,.9,.25,1);
+}
+@keyframes count-pop {
+  0%{ transform: scale(.8); opacity:0 }
+  50%{ transform: scale(1.12); opacity:1 }
+  100%{ transform: scale(1); opacity:1 }
+}
+
+/* -------------------------
+   Side panel
    ------------------------- */
 .side-panel{
-  background: var(--panel);
-  padding:12px;
-  border-radius:12px;
-  border:1px solid var(--glass-border);
-  box-shadow:var(--shadow-sm);
-  display:flex;
-  flex-direction:column;
-  gap:10px;
-  min-height:200px;
+  background:var(--panel);padding:12px;border-radius:12px;border:1px solid var(--glass-border);box-shadow:var(--shadow-sm);
+  display:flex;flex-direction:column;gap:10px;min-height:180px;
 }
-.side-panel button{
-  width:100%;
-  padding:10px 12px;
-  border-radius:8px;
-  font-weight:700;
-}
-.leaderboard{
-  padding:8px;
-  border-radius:8px;
-  background: linear-gradient(180deg, rgba(255,255,255,0.02), transparent);
-  border:1px dashed var(--glass-border);
-}
-.leaderboard ol{ margin:0; padding-left:18px; color:var(--muted) }
+.side-panel button{width:100%;padding:10px;border-radius:10px;font-weight:800;background:linear-gradient(180deg,transparent,transparent);cursor:pointer}
+.leaderboard{padding:8px;border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent);border:1px dashed var(--glass-border)}
+.leaderboard ol{margin:0;padding-left:18px;color:var(--muted)}
 
 /* -------------------------
    Footer
    ------------------------- */
-.site-footer{
-  margin-top:6px;
-  text-align:center;
-  color:var(--muted);
-  font-size:0.85rem;
-  padding:8px;
+.site-footer{ text-align:center;color:var(--muted);font-size:0.86rem;padding:8px }
+
+/* -------------------------
+   Small screens & adjustments
+   ------------------------- */
+@media (max-width:980px){
+  .sudoku-board{ transform:none; padding:10px }
+  :root{ --cell-size: clamp(36px, 9.5vw, 56px) }
+  .digit-bank{ gap:8px }
+}
+@media (max-width:640px){
+  .header-inner{ padding:12px }
+  .controls button, .controls select{ padding:8px 10px; font-size:0.95rem }
+  .digit-btn{ min-width:48px; min-height:48px; font-size:1rem }
+  main.container{ padding-bottom:20px }
 }
 
 /* -------------------------
-   No-JS fallback
+   Fancy entrance for board
    ------------------------- */
-.noscript-warning{
-  background: #fff4f4;
-  color: var(--danger);
-  padding:8px;
-  border-radius:8px;
-  border:1px solid rgba(239,68,68,0.16);
-}
-
-/* -------------------------
-   Tiny helpers
-   ------------------------- */
-.hidden{ display:none !important; }
-.kv{ display:flex; gap:8px; align-items:center; }
-
-/* Accessibility: focus outlines for keyboard users */
-:focus{ outline-offset:3px; }
-
-/* -------------------------
-   Responsive tweaks
-   ------------------------- */
-@media (max-width:520px){
-  :root{ --cell-size: clamp(36px, 9.8vw, 56px); --gap:6px; }
-  .controls button{ padding:8px 10px; font-size:0.9rem }
-  .title{ font-size:1rem }
-}
-
-/* Larger screens: add breathing room */
-@media (min-width:1400px){
-  :root{ --cell-size: 78px; }
-  .header-inner{ padding:16px }
-}
-
-/* -------------------------
-   Fancy finish: subtle entrance animation for board
-   ------------------------- */
-.sudoku-board{
-  transform-origin:center top;
-  animation: board-entrance 540ms cubic-bezier(.2,.9,.2,1);
-}
+.sudoku-board{ transform-origin:center top; animation: board-entrance 640ms cubic-bezier(.2,.9,.2,1) }
 @keyframes board-entrance {
-  0%{ transform: translateY(-10px) scale(.995); opacity:0 }
-  60%{ transform: translateY(4px) scale(1.01); opacity:1 }
-  100%{ transform: translateY(0) scale(1); }
+  0%{ transform: translateY(-8px) scale(.996); opacity:0 }
+  60%{ transform: translateY(6px) scale(1.01); opacity:1 }
+  100%{ transform: translateY(0) scale(1) }
 }
 
 /* -------------------------
-   Print optimization (if user prints)
+   Print rules
    ------------------------- */
 @media print{
   body{ background:#fff; color:#000 }
-  .controls, .side-panel, .site-footer, .header-inner{ display:none }
-  .sudoku-board{ box-shadow:none; border: none; padding:0 }
+  .controls, .side-panel, .site-footer, .header-inner, .digit-bank{ display:none }
+  .sudoku-board{ box-shadow:none;border:none;padding:0 }
 }
 
+/* -------------------------
+   Accessibility helpers
+   ------------------------- */
+:focus{ outline-offset:3px }
+button:focus{ outline: 3px solid color-mix(in srgb,var(--accent) 22%, transparent); outline-offset:2px }
+
 /* ========================================================================
-   Notes for integration (not CSS):
-   - It is recommended that JS renders each cell as:
-       <div class="cell-wrapper" data-row="0" data-col="0" data-box="0">
-         <input class="cell" type="text" maxlength="1" inputmode="numeric" />
-         <div class="notes" aria-hidden="true"> ... 9 .note elements ... </div>
+   Integration notes:
+   - script.js should render each cell as:
+       <div class="cell-wrapper" data-row="R" data-col="C" data-box="B">
+         <input class="cell" ... />
+         <div class="notes"> 9 .note </div>
        </div>
-   - For simple integration where inputs are direct children of .sudoku-board,
-     the selectors above still style input.cell elements correctly.
-   - Toggle theme: set document.documentElement.setAttribute('data-theme','dark')
-   - For accent color variations, override --accent and --accent-2 in :root.
+   - To toggle dark theme: document.documentElement.setAttribute('data-theme','dark')
+   - For count update animation, JS can add .count-update to the .count element briefly.
    ======================================================================== */
