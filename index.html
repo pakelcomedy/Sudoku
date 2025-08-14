@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="description" content="Sudoku — static HTML/CSS/JS. Ringan, responsif, aksesibel. Board 9×9, difficulty, timer, save progress." />
+  <title>Sudoku — Static</title>
+
+  <!-- Link ke file CSS -->
+  <link rel="stylesheet" href="style.css">
+
+  <!-- Favicon minimal (base64 tiny) - optional -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 48 48%22><text y=%2236%22 font-size=%2232%22>▢</text></svg>">
+
+  <!-- Script utama (defer supaya DOM siap) -->
+  <script defer src="script.js"></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <h1 class="title">Sudoku</h1>
+
+      <div class="controls" aria-label="Kontrol permainan" role="group">
+        <label for="difficulty" class="visually-hidden">Tingkat Kesulitan</label>
+        <select id="difficulty" title="Pilih tingkat kesulitan" aria-label="Tingkat kesulitan">
+          <option value="easy">Easy</option>
+          <option value="medium" selected>Medium</option>
+          <option value="hard">Hard</option>
+        </select>
+
+        <button id="new-game" type="button" title="New Game" aria-label="Permainan baru">New Game</button>
+        <button id="check" type="button" title="Check" aria-label="Periksa jawaban">Check</button>
+        <button id="solve" type="button" title="Solve" aria-label="Selesaikan papan">Solve</button>
+        <button id="reset" type="button" title="Reset" aria-label="Reset ke kondisi awal">Reset</button>
+
+        <button id="toggle-pencil" type="button" title="Toggle Pencil Mode" aria-pressed="false" aria-label="Mode catatan (pencil)">Pencil</button>
+        <button id="toggle-theme" type="button" title="Toggle Theme" aria-pressed="false" aria-label="Ganti tema terang/gelap">Theme</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- Informasi singkat & hint -->
+    <section class="info-bar" aria-hidden="false">
+      <div class="status">
+        <span id="timer" aria-live="polite">00:00</span>
+        <span id="mistakes" aria-live="polite">Mistakes: 0</span>
+      </div>
+      <div class="instructions" id="instructions" aria-hidden="false">
+        <small>Gunakan angka 1–9. Klik dua kali untuk toggle note/pencil. Tekan Backspace untuk hapus.</small>
+      </div>
+    </section>
+
+    <!-- Board container: akan diisi / di-manage oleh script.js -->
+    <section id="game" class="game" aria-label="Sudoku game" role="application">
+      <!-- grid akan di-render oleh JS — container kosong di HTML untuk progressive enhancement -->
+      <div id="sudoku-board" class="sudoku-board" role="grid" aria-label="Papan Sudoku 9 per 9" tabindex="0">
+        <!--
+          Struktur DOM expected by script.js:
+          - 81 elemen input (type="text") dengan class "cell"
+          - setiap cell mempunyai data-row (0..8), data-col (0..8), data-box (0..8)
+          - initial givens diberi attribute readonly dan class "given"
+          - user-editable cells: inputmode="numeric" maxlength="1" pattern="[1-9]"
+          Example (JS dapat clone template di bawah):
+        -->
+      </div>
+
+      <!-- Template cell: script.js bisa clone ini untuk membuat 81 cell -->
+      <template id="cell-template">
+        <input
+          class="cell"
+          inputmode="numeric"
+          pattern="[1-9]"
+          maxlength="1"
+          autocomplete="off"
+          aria-label="Kosong"
+          type="text"
+          value=""
+        />
+      </template>
+
+      <!-- area pesan / live region -->
+      <div id="message" class="message" role="status" aria-live="polite"></div>
+    </section>
+
+    <!-- Optional: leaderboard / local save -->
+    <aside class="side-panel" aria-label="Panel">
+      <button id="save-progress" type="button">Save</button>
+      <button id="load-progress" type="button">Load</button>
+      <div id="leaderboard" class="leaderboard" aria-hidden="true">
+        <strong>Leaderboard lokal</strong>
+        <ol id="leader-list"></ol>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <small>Made with ♥ — Static Sudoku · LocalStorage support · Accessible</small>
+    </div>
+  </footer>
+
+  <!-- No-JS fallback -->
+  <noscript>
+    <div class="noscript-warning" role="alert">
+      JavaScript diperlukan untuk menjalankan game Sudoku. Aktifkan JavaScript lalu muat ulang halaman.
+    </div>
+  </noscript>
+
+  <!-- Inline documentation comments for developer (tidak tampil) -->
+  <!--
+    JS hooks (ids/classes) to implement in script.js:
+      - #sudoku-board : container grid
+      - #cell-template : <template> untuk clone cell
+      - #new-game, #check, #solve, #reset : tombol kontrol
+      - #difficulty : select difficulty
+      - #timer : text timer
+      - #mistakes : mistake counter
+      - #toggle-pencil : toggle pencil/note mode (manage aria-pressed)
+      - #toggle-theme : switch theme (manage aria-pressed)
+      - #message : status messages (aria-live)
+      - #save-progress / #load-progress : optional localstorage handlers
+    Data model recommended:
+      - store grid as 9x9 array of objects {value:number|null, given:boolean, notes:Set<number>}
+      - use data-row/data-col/data-box on DOM cells for quick lookup if you render static 81 inputs
+  -->
+
+  <style>
+    /* Minimal SCCS-safe baseline for better first paint while style.css loads.
+       You can remove this if style.css includes full resets. */
+    :root{--container-padding:1rem;font-family:system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;}
+    .container{max-width:920px;margin:0 auto;padding:var(--container-padding);}
+    .visually-hidden{position:absolute!important;height:1px;width:1px;overflow:hidden;clip:rect(1px,1px,1px,1px);white-space:nowrap;}
+    .sudoku-board{display:grid;gap:4px; /* final layout handled in style.css */padding:1rem}
+  </style>
+</body>
+</html>
