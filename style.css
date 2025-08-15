@@ -284,84 +284,60 @@ main.container {
 .side-panel { display:grid; gap:8px; }
 .leaderboard { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:8px; }
 
+
 /* -----------------------------
-   Digit bank — stable square-like buttons with internal count
-   Replace/override previous .digit-bank / .digit-btn rules with this
+   Digit bank
    ----------------------------- */
 .digit-bank {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 8px;
   align-items: stretch;
-  padding: 4px 2px;
-  margin-top: 4px;
 }
 
-/* Use fixed-ish height (responsive via clamp) and flex centering.
-   Remove aspect-ratio so two-line content won't overflow outside the box. */
 .digit-btn {
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  gap: 4px;
-  padding: 6px;
-  height: clamp(44px, 12vw, 56px); /* responsive but bounded */
-  min-height: 42px;
+  display: grid;
+  grid-template-rows: auto auto;
+  place-items: center;
+  gap: 2px;
+  padding: 8px 6px;
   border-radius: 8px;
   border: 1px solid var(--border);
   background: var(--panel);
   color: var(--text);
+  box-shadow: var(--shadow);
   cursor: pointer;
   user-select: none;
-  overflow: hidden; /* IMPORTANT: keep count inside */
-  transition: transform .06s ease, background .12s ease, box-shadow .12s ease;
+  transition: transform .06s ease, background .15s ease, border-color .15s ease;
 }
 
-/* hover/active */
-.digit-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 14px rgba(0,0,0,.04); background: color-mix(in oklab, var(--panel) 92%, var(--bg-soft) 8%); }
-.digit-btn:active { transform: translateY(0); box-shadow: none; }
+.digit-btn:hover { background: var(--bg-soft); }
+.digit-btn:active { transform: translateY(1px); }
 
-/* disabled */
 .digit-btn[disabled],
 .digit-btn[aria-disabled="true"] {
-  opacity: 0.5;
+  opacity: .5;
   cursor: not-allowed;
-  transform: none;
-  box-shadow: none;
 }
 
-/* digit & count: keep line-height tight so they fit */
 .digit-btn .digit {
-  font-weight: 800;
-  font-size: clamp(.98rem, 2.6vw, 1.05rem);
+  font-weight: 700;
+  font-size: 1rem;
   line-height: 1;
-  margin: 0;
-  display: block;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  overflow: hidden;
 }
 
 .digit-btn .count {
-  font-size: .68rem;
+  font-size: .75rem;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
-  line-height: 1;
-  display: block;
-  margin: 0;
 }
 
-/* erase button distinction (if used) */
-#erase-btn {
-  border-color: var(--border);
+/* kecil animasi count jika diupdate via JS */
+.count-update {
+  animation: bump .24s ease;
 }
-
-/* very narrow screens: slightly reduce height & font */
-@media (max-width: 360px) {
-  .digit-btn { height: clamp(40px, 14vw, 48px); padding: 4px; gap: 3px; }
-  .digit-btn .digit { font-size: .98rem; }
-  .digit-btn .count { font-size: .64rem; }
+@keyframes bump {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.14); }
+  100% { transform: scale(1); }
 }
-
