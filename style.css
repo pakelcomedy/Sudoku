@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Sudoku — style.css (fixed: compact header, theme toggle reliability, mobile-like desktop)
+   Sudoku — style.css (final: compact layout + reliable digit bank badges)
    ========================================================================== */
 
 /* -----------------------------
@@ -25,10 +25,15 @@
   --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
   --container-max: 680px;     /* lebih sempit supaya desktop mirip mobile */
   --board-size: min(86vw, 460px); /* board lebih compact */
+
+  /* digit bank sizing */
+  --digit-btn-min-h: 42px;
+  --digit-btn-max-h: 56px;
+  --digit-btn-v-padding: 6px;
+  --digit-badge-size: 20px;
 }
 
 /* Explicit dark theme via toggle (JS sets data-theme="dark" on documentElement) */
-/* Include multiple selectors to ensure JS toggles are applied reliably */
 :root[data-theme="dark"],
 html[data-theme="dark"],
 body[data-theme="dark"],
@@ -70,7 +75,7 @@ body {
 .container {
   max-width: var(--container-max);
   margin: 0 auto;
-  padding: 6px; /* compact: reduced padding */
+  padding: 6px; /* compact */
 }
 
 /* small helpers */
@@ -115,22 +120,21 @@ body {
   gap:8px;
 }
 
-/* controls: don't wrap; allow horizontal scroll if overflow */
+/* controls: single line, scroll if overflow */
 .controls {
   display: flex;
-  gap: 6px; /* tighter */
+  gap: 6px;
   align-items: center;
   flex-wrap: nowrap;
   overflow-x: auto;
   padding-bottom: 0;
   -webkit-overflow-scrolling: touch;
 }
+/* hide scrollbar on webkit */
+.controls::-webkit-scrollbar { height: 8px; display: none; }
+.controls { -ms-overflow-style: none; scrollbar-width: none; }
 
-/* hide scrollbars but still scrollable (lightweight) */
-.controls::-webkit-scrollbar { height: 8px; }
-.controls::-webkit-scrollbar-thumb { background: transparent; }
-
-/* smaller control sizes */
+/* small control sizes */
 select,
 button {
   appearance: none;
@@ -144,8 +148,6 @@ button {
   transition: background .12s ease, border-color .12s ease, transform .06s ease;
   white-space: nowrap;
 }
-
-/* focus & hover */
 select:focus,
 button:focus {
   outline: 2px solid var(--accent);
@@ -154,7 +156,6 @@ button:focus {
 button:hover { background: var(--bg-soft); }
 button:active { transform: translateY(1px); }
 
-/* small active states */
 #toggle-pencil.active {
   border-color: var(--primary);
   box-shadow: inset 0 0 0 2px var(--primary-ghost);
@@ -284,60 +285,129 @@ main.container {
 .side-panel { display:grid; gap:8px; }
 .leaderboard { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:8px; }
 
-
 /* -----------------------------
-   Digit bank
+   Digit bank — final stable implementation
+   - badge (.count) positioned inside the button (top-right)
+   - main digit centered and never causes count to overflow outside
    ----------------------------- */
 .digit-bank {
   display: grid;
-  grid-template-columns: repeat(10, 1fr);
-  gap: 8px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;               /* compact */
   align-items: stretch;
+  padding: 4px 2px;
+  margin-top: 4px;
 }
 
+/* button: relative so badge can be absolute inside it */
 .digit-btn {
-  display: grid;
-  grid-template-rows: auto auto;
-  place-items: center;
-  gap: 2px;
-  padding: 8px 6px;
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0; /* use fixed height so digit centered perfectly */
+  height: clamp(var(--digit-btn-min-h), 11vw, var(--digit-btn-max-h));
+  min-height: var(--digit-btn-min-h);
   border-radius: 8px;
   border: 1px solid var(--border);
   background: var(--panel);
   color: var(--text);
-  box-shadow: var(--shadow);
   cursor: pointer;
   user-select: none;
-  transition: transform .06s ease, background .15s ease, border-color .15s ease;
+  overflow: hidden; /* ensures contents don't spill */
+  transition: transform .06s ease, background .12s ease, box-shadow .12s ease;
 }
 
-.digit-btn:hover { background: var(--bg-soft); }
-.digit-btn:active { transform: translateY(1px); }
+/* center the digit text block inside */
+.digit-btn .digit {
+  display: block;
+  font-weight: 800;
+  font-size: clamp(1rem, 2.6vw, 1.05rem);
+  line-height: 1;
+  padding: 0 6px;
+  text-align: center;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
 
+/* badge: absolute, top-right inside button */
+.digit-btn .count {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  min-width: var(--digit-badge-size);
+  height: var(--digit-badge-size);
+  padding: 0 6px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: .66rem;
+  line-height: 1;
+  color: var(--text);
+  background: color-mix(in oklab, var(--panel) 84%, var(--bg-soft) 16%);
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  pointer-events: none; /* so clicks fall through to button */
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 1px 0 rgba(0,0,0,0.03) inset;
+}
+
+/* hover / active feedback */
+.digit-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,0.06); background: color-mix(in oklab, var(--panel) 92%, var(--bg-soft) 8%); }
+.digit-btn:active { transform: translateY(0); box-shadow: none; }
+
+/* disabled state */
 .digit-btn[disabled],
 .digit-btn[aria-disabled="true"] {
-  opacity: .5;
+  opacity: .55;
   cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
-.digit-btn .digit {
-  font-weight: 700;
-  font-size: 1rem;
-  line-height: 1;
+/* erase button (if implemented as digit-btn with id) */
+#erase-btn {
+  border-color: var(--border);
+  background: linear-gradient(180deg, var(--panel), color-mix(in oklab, var(--panel) 92%, var(--danger) 8%));
 }
 
-.digit-btn .count {
-  font-size: .75rem;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
+/* bump animation for count updates (JS will toggle .count-update) */
+.count-update { animation: bump .26s ease; }
+@keyframes bump { 0%{transform:scale(1)}50%{transform:scale(1.12)}100%{transform:scale(1)} }
+
+/* very narrow screens: slightly reduce badge & height */
+@media (max-width: 360px) {
+  .digit-btn { height: clamp(40px, 14vw, 48px); }
+  .digit-btn .digit { font-size: .98rem; }
+  .digit-btn .count { font-size: .62rem; top: 5px; right: 5px; min-width: 18px; height: 18px; padding: 0 4px; }
 }
 
-/* kecil animasi count jika diupdate via JS */
-.count-update {
-  animation: bump .24s ease;
+/* accessibility focus */
+.digit-btn:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* -----------------------------
+   Footer / misc
+   ----------------------------- */
+.site-footer { margin-top:8px; padding:10px 0 16px; color:var(--muted); border-top:1px solid var(--border); }
+
+.noscript-warning { margin:12px; padding:10px; background:var(--danger); color:#fff; border-radius:8px; }
+
+/* responsive tweaks */
+@media (max-width: 420px) {
+  .container { padding:8px; }
+  .header-inner { height:48px; padding:6px; gap:6px; }
+  select, button { padding:6px 8px; font-size:.95rem; }
+  .sudoku-board { width: min(96vw, 420px); padding:6px; }
+  .digit-bank { grid-template-columns: repeat(5, minmax(0,1fr)); gap:6px; }
 }
-@keyframes bump {
-  0% { transform: scale(1); }
-  50% { transform: scale(1.14); }
-  100% { transform: scale(1); }
+
+/* print minimal */
+@media print {
+  .site-header, .info-bar, .side-panel, .digit-bank, .site-footer { display:none !important; }
+  .sudoku-board { --size: 18cm; box-shadow:none; background:#fff; border:none; }
+  .cell { background:#fff; color:#000; border:1px solid #000; }
 }
