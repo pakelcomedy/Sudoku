@@ -1,8 +1,8 @@
 /* ==========================================================================
-   Sudoku — style.css (simple, responsive, themable) — UPDATED
-   - Default theme: LIGHT (only switches to dark when JS sets data-theme="dark")
-   - Digit-bank: stacked under board on mobile; moved to side (vertical) on desktop
-   - Minimal, accessible, responsive
+   Sudoku — style.css (simple, responsive, themable)
+   - Minimalis, fokus pada keterbacaan & aksesibilitas
+   - Theme: light/dark via CSS variables; JS toggle pakai [data-theme="dark"]
+   - Responsif: grid & toolbar menyesuaikan lebar layar
    ========================================================================== */
 
 /* -----------------------------
@@ -28,7 +28,25 @@
   --font: system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
 }
 
-/* Explicit dark theme via toggle (JS must set data-theme="dark") */
+/* Prefer OS dark mode by default (pengguna bisa override via toggle) */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0b0f14;
+    --bg-soft: #10161d;
+    --panel: #0f141a;
+    --border: #1f2937;
+    --text: #e5e7eb;
+    --muted: #9ca3af;
+    --primary: #60a5fa;
+    --primary-ghost: rgba(96, 165, 250, 0.15);
+    --accent: #38bdf8;
+    --danger: #f87171;
+    --ok: #34d399;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+}
+
+/* Explicit dark theme via toggle */
 :root[data-theme="dark"],
 html.dark,
 body.dark {
@@ -53,7 +71,9 @@ body.dark {
 *::before,
 *::after { box-sizing: border-box; }
 
-html, body { height: 100%; }
+html, body {
+  height: 100%;
+}
 
 body {
   margin: 0;
@@ -82,7 +102,7 @@ body {
 .site-header {
   position: sticky;
   top: 0;
-  z-index: 20;
+  z-index: 10;
   background: var(--bg);
   border-bottom: 1px solid var(--border);
   backdrop-filter: saturate(120%) blur(6px);
@@ -171,28 +191,19 @@ button:active { transform: translateY(1px); }
 .instructions { color: var(--muted); }
 
 /* -----------------------------
-   Main layout adjustments
+   Game layout
    ----------------------------- */
-/* Keep main.container single-column to avoid interfering with other elements */
 main.container {
   display: grid;
   grid-template-columns: 1fr;
   gap: 16px;
 }
 
-/* The .game area (board + digit-bank + message)
-   - Mobile: stacked
-   - Desktop: two-column: board left, digit bank right
-*/
 .game {
   display: grid;
   gap: 16px;
-  grid-template-columns: 1fr; /* mobile default: single column */
 }
 
-/* -----------------------------
-   Sudoku board
-   ----------------------------- */
 .sudoku-board {
   --size: min(92vw, 560px);
   width: var(--size);
@@ -208,10 +219,9 @@ main.container {
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   position: relative;
-  z-index: 1;
 }
 
-/* 3x3 block separators */
+/* 3x3 block separators: gunakan outline layer sederhana */
 .sudoku-board::before,
 .sudoku-board::after {
   content: "";
@@ -219,6 +229,7 @@ main.container {
   inset: 12px;
   pointer-events: none;
   border-radius: calc(var(--radius) - 6px);
+  /* grid lines tebal (3x3) dibuat dengan gradient */
   background:
     linear-gradient(to right, transparent calc((100%/3) - 1px), var(--border) calc((100%/3) - 1px), var(--border) calc((100%/3) + 1px), transparent calc((100%/3) + 1px),
                                transparent calc((200%/3) - 1px), var(--border) calc((200%/3) - 1px), var(--border) calc((200%/3) + 1px), transparent calc((200%/3) + 1px)) ,
@@ -230,11 +241,12 @@ main.container {
 
 .cell-wrapper {
   position: relative;
-  z-index: 1;
+  z-index: 1; /* di atas ::before grids */
   border-radius: 6px;
   overflow: hidden;
 }
 
+/* Sel */
 .cell {
   width: 100%;
   height: 100%;
@@ -262,7 +274,7 @@ main.container {
   outline-offset: -2px;
 }
 
-/* Notes */
+/* Notes (pencil) */
 .notes {
   position: absolute;
   inset: 0;
@@ -274,34 +286,80 @@ main.container {
   color: var(--muted);
 }
 
-.note { display: grid; place-items: center; opacity: .85; }
+.note {
+  display: grid;
+  place-items: center;
+  opacity: .85;
+}
 
-/* Highlights & invalid */
+/* Highlighting */
 .cell-wrapper.highlight-row .cell,
 .cell-wrapper.highlight-col .cell,
 .cell-wrapper.highlight-block .cell {
   background: color-mix(in oklab, var(--bg) 88%, var(--primary) 12%);
 }
-.cell-wrapper.highlight .cell { border-color: var(--accent); }
-.cell.invalid { border-color: var(--danger); color: var(--danger); animation: wiggle .25s ease; }
-@keyframes wiggle { 0%{transform:translateX(0)}25%{transform:translateX(-4px)}50%{transform:translateX(3px)}100%{transform:translateX(0)} }
 
-/* Message / status */
-.message { min-height: 20px; text-align: center; color: var(--muted); }
+.cell-wrapper.highlight .cell {
+  border-color: var(--accent);
+}
+
+/* Invalid/conflict (auto-check) */
+.cell.invalid {
+  border-color: var(--danger);
+  color: var(--danger);
+  /* fallback wiggle in case WAAPI unsupported */
+  animation: wiggle .25s ease;
+}
+
+@keyframes wiggle {
+  0% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  50% { transform: translateX(3px); }
+  100% { transform: translateX(0); }
+}
+
+/* Message / status area */
+.message {
+  min-height: 20px;
+  text-align: center;
+  color: var(--muted);
+}
 
 /* -----------------------------
-   Digit bank (mobile default below board)
+   Side panel (optional)
+   ----------------------------- */
+.side-panel {
+  display: grid;
+  gap: 8px;
+}
+
+.leaderboard {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+}
+
+.leaderboard strong {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.leaderboard ol {
+  margin: 0;
+  padding-left: 18px;
+}
+
+/* -----------------------------
+   Digit bank
    ----------------------------- */
 .digit-bank {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(10, 1fr);
   gap: 8px;
   align-items: stretch;
-  justify-items: stretch;
-  padding: 6px 0;
 }
 
-/* Buttons */
 .digit-btn {
   display: grid;
   grid-template-rows: auto auto;
@@ -315,103 +373,81 @@ main.container {
   box-shadow: var(--shadow);
   cursor: pointer;
   user-select: none;
-  transition: transform .06s ease, background .12s ease, border-color .12s ease;
-  min-height: 44px;
+  transition: transform .06s ease, background .15s ease, border-color .15s ease;
 }
 
 .digit-btn:hover { background: var(--bg-soft); }
 .digit-btn:active { transform: translateY(1px); }
 
 .digit-btn[disabled],
-.digit-btn[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+.digit-btn[aria-disabled="true"] {
+  opacity: .5;
+  cursor: not-allowed;
+}
 
-.digit-btn .digit { font-weight: 700; font-size: 1rem; line-height: 1; }
-.digit-btn .count { font-size: .75rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.digit-btn .digit {
+  font-weight: 700;
+  font-size: 1rem;
+  line-height: 1;
+}
 
-/* count animation */
-.count-update { animation: bump .24s ease; }
-@keyframes bump { 0%{transform:scale(1)}50%{transform:scale(1.14)}100%{transform:scale(1)} }
+.digit-btn .count {
+  font-size: .75rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
 
-/* Erase */
-#erase-btn { border-color: var(--border); }
+/* kecil animasi count jika diupdate via JS */
+.count-update {
+  animation: bump .24s ease;
+}
+@keyframes bump {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.14); }
+  100% { transform: scale(1); }
+}
+
+/* Erase button style */
+#erase-btn {
+  border-color: var(--border);
+}
 #erase-btn:hover { background: var(--bg-soft); }
-
-/* -----------------------------
-   Side panel (optional)
-   ----------------------------- */
-.side-panel { display: grid; gap: 8px; }
-.leaderboard { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
-.leaderboard strong { display:block;margin-bottom:8px; }
-.leaderboard ol { margin:0;padding-left:18px; }
 
 /* -----------------------------
    Footer
    ----------------------------- */
-.site-footer { margin-top: 12px; padding: 16px 0 24px; color: var(--muted); border-top: 1px solid var(--border); }
+.site-footer {
+  margin-top: 12px;
+  padding: 16px 0 24px;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+}
 
 /* -----------------------------
    No-JS fallback
    ----------------------------- */
-.noscript-warning { margin: 12px; padding: 12px; background: var(--danger); color: #fff; border-radius: var(--radius); }
-
-/* -----------------------------
-   Desktop layout: put digit-bank to the right of the board
-   - adjust at a reasonable desktop breakpoint
-   ----------------------------- */
-@media (min-width: 900px) {
-  /* Make .game two-column: left = board & message, right = digit bank (vertical) */
-  .game {
-    grid-template-columns: 1fr 180px;
-    align-items: start;
-    gap: 20px;
-  }
-
-  /* Ensure board uses left column and is full-width (no centered small width) */
-  .sudoku-board {
-    width: 100%;
-    max-width: none;
-    margin: 0;
-    --size: 100%; /* ensures aspect fits column width */
-  }
-
-  /* Place digit-bank into right column as vertical stack */
-  .digit-bank {
-    grid-column: 2 / 3;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    align-items: stretch;
-    justify-content: flex-start;
-    padding: 6px;
-    position: sticky;
-    top: 96px; /* keep below header (approx); adjust if header height differs */
-    height: fit-content;
-  }
-
-  /* Make digit buttons full width and taller */
-  .digit-btn, #erase-btn {
-    width: 100%;
-    min-height: 48px;
-    padding: 10px 12px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-  }
-  .digit-btn .digit { font-size: 1.1rem; }
-  .digit-btn .count { font-size: .85rem; text-align: right; margin-left: auto; color: var(--muted); }
-
-  /* Keep message below the board in left column (it flows naturally) */
-  .message { grid-column: 1 / 2; }
+.noscript-warning {
+  margin: 12px;
+  padding: 12px;
+  background: var(--danger);
+  color: #fff;
+  border-radius: var(--radius);
 }
 
 /* -----------------------------
-   Smaller breakpoints
+   Responsive tweaks
    ----------------------------- */
 @media (max-width: 720px) {
-  .controls { width: 100%; }
-  .sudoku-board { --size: min(94vw, 520px); padding: 10px; }
-  .digit-bank { grid-template-columns: repeat(5, 1fr); }
+  .controls {
+    width: 100%;
+  }
+  .sudoku-board {
+    --size: min(94vw, 520px);
+    padding: 10px;
+  }
+  .digit-bank {
+    grid-template-columns: repeat(5, 1fr);
+  }
 }
 
 @media (max-width: 420px) {
@@ -423,10 +459,13 @@ main.container {
 }
 
 /* -----------------------------
-   Print
+   Print (optional minimal)
    ----------------------------- */
 @media print {
   .site-header, .info-bar, .side-panel, .digit-bank, .site-footer { display: none !important; }
-  .sudoku-board { --size: 18cm; box-shadow: none; background: #fff; }
+  .sudoku-board {
+    --size: 18cm;
+    box-shadow: none; background: #fff;
+  }
   .cell { background: #fff; }
 }
