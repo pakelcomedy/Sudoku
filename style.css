@@ -1,383 +1,432 @@
 /* ==========================================================================
-   Sudoku — style.css
-   - Complete stylesheet for the provided index.html
-   - Responsive, animated, accessible
-   - Theme support via document.documentElement.setAttribute('data-theme','dark') or .dark
+   Sudoku — style.css (simple, responsive, themable) — UPDATED
+   - Default theme: LIGHT (only switches to dark when JS sets data-theme="dark")
+   - Digit-bank: stacked under board on mobile; moved to side (vertical) on desktop
+   - Minimal, accessible, responsive
    ========================================================================== */
 
-/* -------------------------
-   Root variables (themeable)
-   ------------------------- */
-:root{
-  --bg: #f6f7fb;
+/* -----------------------------
+   CSS Variables (Light theme default)
+   ----------------------------- */
+:root {
+  --bg: #ffffff;
+  --bg-soft: #f6f7f9;
   --panel: #ffffff;
+  --border: #e5e7eb;
+  --text: #111827;
   --muted: #6b7280;
-  --text: #0f172a;
-  --accent: #7c3aed;        /* primary */
-  --accent-2: #06b6d4;      /* secondary */
+  --primary: #2563eb;
+  --primary-ghost: rgba(37, 99, 235, 0.08);
+  --accent: #0ea5e9;
   --danger: #ef4444;
-  --success: #10b981;
-  --glass: rgba(255,255,255,0.6);
-  --cell-bg: #ffffff;
-  --cell-border: rgba(15,23,42,0.06);
-  --given-bg: linear-gradient(180deg,#eef2ff,#f8f9ff);
-  --note-text: #9ca3af;
-  --shadow-sm: 0 4px 12px rgba(2,6,23,0.06);
-  --shadow-md: 0 10px 30px rgba(2,6,23,0.08);
-  --gap: 8px;
-  --thick-line: 3px;
-  --cell-min: 40px;
-  --cell-max: 78px;
-  --cell-size: clamp(var(--cell-min), 6.4vw, var(--cell-max));
-  --radius: 12px;
-  --transition-fast: 160ms;
-  --transition: 300ms;
-  --focus-glow: 0 10px 28px rgba(124,58,237,0.12);
-  --glass-border: rgba(15,23,42,0.06);
-  --ui-scale: 1;
-  --digit-btn-size: 56px;
-  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  --ok: #059669;
+  --shadow: 0 1px 2px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.06);
+
+  --cell-size: 48px;          /* base cell size (desktop) */
+  --cell-gap: 4px;            /* gap antar sel */
+  --radius: 10px;             /* rounding */
+  --font: system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
 }
 
-/* Dark theme override */
-:root[data-theme="dark"], :root.dark {
-  --bg: #071022;
-  --panel: #071827;
-  --muted: #9aa7b8;
-  --text: #e6eef8;
-  --accent: #8b5cf6;
-  --accent-2: #06b6d4;
+/* Explicit dark theme via toggle (JS must set data-theme="dark") */
+:root[data-theme="dark"],
+html.dark,
+body.dark {
+  --bg: #0b0f14;
+  --bg-soft: #10161d;
+  --panel: #0f141a;
+  --border: #1f2937;
+  --text: #e5e7eb;
+  --muted: #9ca3af;
+  --primary: #60a5fa;
+  --primary-ghost: rgba(96, 165, 250, 0.15);
+  --accent: #38bdf8;
   --danger: #f87171;
-  --success: #34d399;
-  --glass: rgba(255,255,255,0.02);
-  --cell-bg: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
-  --cell-border: rgba(255,255,255,0.04);
-  --given-bg: linear-gradient(180deg, rgba(139,92,246,0.06), rgba(139,92,246,0.02));
-  --note-text: #9aa7b8;
-  --shadow-sm: 0 6px 18px rgba(2,6,23,0.25);
-  --shadow-md: 0 14px 40px rgba(2,6,23,0.6);
+  --ok: #34d399;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
 }
 
-/* -------------------------
-   Reset & base
-   ------------------------- */
-*{box-sizing:border-box}
-html,body{height:100%}
-body{
-  margin:0;
-  font-family: var(--font-sans);
-  background: linear-gradient(180deg, var(--bg), color-mix(in srgb, var(--bg) 88%, var(--panel) 12%));
-  color:var(--text);
-  -webkit-font-smoothing:antialiased;
-  -moz-osx-font-smoothing:grayscale;
-  line-height:1.25;
-  font-size:16px;
-  display:flex;
-  flex-direction:column;
-  gap:16px;
-  padding:20px;
-  transition: background var(--transition);
+/* -----------------------------
+   Base
+   ----------------------------- */
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.4;
 }
 
-/* Utility */
-.container{max-width:1100px;margin:0 auto;padding:0 16px;width:100%}
-.visually-hidden{position:absolute!important;height:1px;width:1px;overflow:hidden;clip:rect(1px,1px,1px,1px);white-space:nowrap}
-.hidden{display:none!important}
-
-/* -------------------------
-   Header & controls
-   ------------------------- */
-.site-header{display:flex;justify-content:center;align-items:center}
-.header-inner{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:12px;
-  width:100%;
-  padding:10px;
-  border-radius:14px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--panel) 96%, transparent), transparent);
-  border:1px solid var(--glass-border);
-  box-shadow: var(--shadow-sm);
-}
-.title{margin:0;font-size:1.15rem;font-weight:800;letter-spacing:-0.02em;display:flex;align-items:center;gap:10px}
-.title::before{
-  content:"";
-  display:inline-block;
-  width:36px;height:36px;border-radius:9px;
-  background: conic-gradient(from 210deg,var(--accent),var(--accent-2));
-  box-shadow: 0 6px 12px rgba(93,63,211,0.08), inset 0 -6px 18px rgba(255,255,255,0.04);
-}
-
-/* Controls */
-.controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.controls select, .controls button{
-  background:var(--panel);
-  border:1px solid var(--glass-border);
-  padding:8px 12px;border-radius:10px;font-weight:700;cursor:pointer;
-  box-shadow: var(--shadow-sm);transition:transform var(--transition-fast), box-shadow var(--transition);
-  color:var(--text);
-}
-.controls select{appearance:none;padding-right:28px}
-.controls button:hover{transform:translateY(-3px)}
-.controls button:active{transform:translateY(0)}
-.controls button[aria-pressed="true"]{
-  background: linear-gradient(180deg,color-mix(in srgb,var(--accent) 12%,var(--panel) 88%), var(--accent));
-  color:#fff;border-color:color-mix(in srgb,var(--accent) 60%,transparent);box-shadow:var(--focus-glow);
-}
-
-/* Responsive header */
-@media (max-width:640px){
-  .header-inner{flex-direction:column;align-items:flex-start;padding:12px}
-  .controls{width:100%;justify-content:flex-start}
-}
-
-/* -------------------------
-   Info bar (timer, instructions)
-   ------------------------- */
-.info-bar{
-  display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;border-radius:12px;
-  border:1px solid var(--glass-border);background:var(--panel);box-shadow:var(--shadow-sm);
-}
-.status{display:flex;gap:12px;align-items:center;font-weight:700}
-#timer{padding:6px 10px;border-radius:8px;min-width:72px;text-align:center;background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 8%,transparent),transparent)}
-.instructions small{color:var(--muted)}
-
-/* -------------------------
-   Main layout: board + side-panel
-   ------------------------- */
-main.container{display:grid;grid-template-columns:1fr 280px;gap:18px;align-items:start}
-@media (max-width:980px){ main.container{grid-template-columns:1fr} }
-
-/* -------------------------
-   Sudoku board container
-   ------------------------- */
-.game{display:flex;flex-direction:column;gap:14px}
-.sudoku-board{
-  --gap-size:8px; --thick: var(--thick-line);
-  display:grid;
-  grid-template-columns: repeat(9, var(--cell-size));
-  grid-auto-rows: var(--cell-size);
-  gap: var(--gap-size);
-  padding: calc(var(--gap-size) + 12px);
-  border-radius: 14px;
-  background: linear-gradient(180deg, color-mix(in srgb,var(--panel) 78%, var(--bg) 22%), var(--panel));
-  box-shadow: var(--shadow-md);
-  position:relative;
-  width: fit-content;
+.container {
+  max-width: 960px;
   margin: 0 auto;
-  transition: transform var(--transition), box-shadow var(--transition);
+  padding: 16px;
 }
 
-/* thick 3x3 separators using overlay gradients (keeps DOM simple) */
-.sudoku-board::before, .sudoku-board::after{
-  content:"";position:absolute;inset:0;pointer-events:none;opacity:0.98;
-}
-.sudoku-board::before{
-  background-image:
-    linear-gradient(to right,
-      transparent calc(33.333% - var(--thick)/2),
-      rgba(15,23,42,0.06) calc(33.333% - var(--thick)/2),
-      rgba(15,23,42,0.06) calc(33.333% + var(--thick)/2),
-      transparent calc(33.333% + var(--thick)/2),
-      transparent calc(66.666% - var(--thick)/2),
-      rgba(15,23,42,0.06) calc(66.666% - var(--thick)/2),
-      rgba(15,23,42,0.06) calc(66.666% + var(--thick)/2),
-      transparent calc(66.666% + var(--thick)/2)
-    );
-  mix-blend-mode:multiply;
-}
-.sudoku-board::after{
-  background-image:
-    linear-gradient(to bottom,
-      transparent calc(33.333% - var(--thick)/2),
-      rgba(15,23,42,0.06) calc(33.333% - var(--thick)/2),
-      rgba(15,23,42,0.06) calc(33.333% + var(--thick)/2),
-      transparent calc(33.333% + var(--thick)/2),
-      transparent calc(66.666% - var(--thick)/2),
-      rgba(15,23,42,0.06) calc(66.666% - var(--thick)/2),
-      rgba(15,23,42,0.06) calc(66.666% + var(--thick)/2),
-      transparent calc(66.666% + var(--thick)/2)
-    );
-  mix-blend-mode:multiply;
+.visually-hidden {
+  position: absolute !important;
+  height: 1px; width: 1px;
+  overflow: hidden; clip: rect(1px,1px,1px,1px);
+  white-space: nowrap;
 }
 
-/* -------------------------
-   Cell wrapper + input
-   ------------------------- */
-.cell-wrapper,
-.sudoku-board > input.cell,
-.sudoku-board > .cell {
-  position:relative;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  border-radius:10px;
-  background: var(--cell-bg);
-  border:1px solid var(--cell-border);
-  box-shadow: var(--shadow-sm);
-  overflow:visible;
-  transition: transform var(--transition-fast), box-shadow var(--transition), border-color var(--transition);
+/* -----------------------------
+   Header & Controls
+   ----------------------------- */
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: saturate(120%) blur(6px);
 }
 
-/* input styling */
-.cell{
-  -webkit-appearance:none;appearance:none;border:none;outline:none;background:transparent;
-  width:100%;height:100%;text-align:center;font-weight:800;font-family:var(--font-sans);
-  font-size: clamp(1rem, 3.6vw, 2.2rem);letter-spacing:0.01em;color:var(--text);
-  caret-color: transparent;padding:0;margin:0;cursor:default;user-select:none;line-height:1;
+.header-inner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
 }
 
-/* givens */
-.cell.given, .cell[readonly]{
-  pointer-events:none;
-  color: color-mix(in srgb, var(--text) 60%, var(--muted) 40%);
-  font-weight:900; background:var(--given-bg); opacity:0.98;
+.title {
+  margin: 0;
+  font-size: 1.25rem;
+  letter-spacing: .3px;
 }
 
-/* hover & focus */
-.cell-wrapper:hover{ transform: translateY(-4px); box-shadow: var(--focus-glow); }
-.cell:focus{ transform: scale(1.02); box-shadow: var(--focus-glow); border-radius:10px; }
-.cell:focus-visible{ outline: 3px solid color-mix(in srgb, var(--accent) 35%, transparent); outline-offset:2px; }
-
-/* highlights (JS adds these classes) */
-.cell-wrapper.highlight-row, .cell-wrapper.highlight-col, .cell-wrapper.highlight-block,
-.cell.highlight { background: linear-gradient(180deg, color-mix(in srgb,var(--accent) 6%, transparent), transparent); border-color: color-mix(in srgb,var(--accent) 18%, var(--cell-border)); transform: translateY(-3px); }
-
-/* invalid / correct feedback */
-.cell.invalid { animation: wobble 420ms cubic-bezier(.36,.07,.19,.97); border-color: color-mix(in srgb,var(--danger) 60%, transparent); box-shadow: 0 8px 22px rgba(239,68,68,0.12); }
-.cell.correct { border-color: color-mix(in srgb,var(--success) 60%, transparent); box-shadow: 0 8px 22px rgba(16,185,129,0.12); transform: translateY(-2px) scale(1.01); }
-
-@keyframes wobble {
-  0%{ transform: translateX(0) }
-  20%{ transform: translateX(-6px) }
-  40%{ transform: translateX(5px) }
-  60%{ transform: translateX(-3px) }
-  80%{ transform: translateX(2px) }
-  100%{ transform: translateX(0) }
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
 }
 
-/* -------------------------
-   Notes / pencil mode
-   ------------------------- */
-.cell-wrapper .notes{
-  position:absolute;inset:6px;display:grid;grid-template-columns:repeat(3,1fr);
-  gap:3px;pointer-events:none;align-items:center;justify-items:center;
-}
-.cell-wrapper .note{
-  font-size: clamp(0.52rem, 1.2vw, 0.9rem);
-  color:var(--note-text);opacity:0.96;user-select:none;font-weight:700;
-}
-.cell-wrapper.has-value .notes{ display:none }
-
-/* -------------------------
-   Message / live region
-   ------------------------- */
-.message{
-  min-height:32px;padding:8px 12px;border-radius:10px;background: linear-gradient(180deg, rgba(0,0,0,0.02), transparent);
-  border:1px solid var(--glass-border);color:var(--muted);font-weight:700;display:flex;align-items:center;gap:8px;
+select,
+button {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font: inherit;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, transform .06s ease;
 }
 
-/* -------------------------
-   Digit bank (buttons 1-9 + erase)
-   ------------------------- */
-.digit-bank{
-  display:flex;flex-wrap:wrap;gap:10px;justify-content:center;align-items:center;padding:6px;
-  margin-top:6px;
-}
-.digit-btn, .erase-btn{
-  display:inline-flex;flex-direction:column;align-items:center;justify-content:center;
-  min-width:var(--digit-btn-size);min-height:var(--digit-btn-size);padding:8px;border-radius:12px;
-  border:1px solid var(--glass-border);background:var(--panel);cursor:pointer;font-weight:900;
-  box-shadow: var(--shadow-sm);transition: transform var(--transition-fast), box-shadow var(--transition), background var(--transition);
-}
-.digit-btn{ gap:4px; font-size:1.1rem; }
-.digit-btn .digit{ font-size:1.25rem; line-height:1 }
-.digit-btn .count{ font-size:0.75rem; color:var(--muted); font-weight:700 }
-
-/* pressed / active */
-.digit-btn:active, .erase-btn:active{ transform: translateY(2px) scale(.995) }
-.digit-btn[disabled]{ opacity:0.48; cursor:not-allowed; transform:none }
-
-/* visual highlight for currently selected digit (if needed) */
-.digit-btn[aria-pressed="true"]{ box-shadow: 0 10px 30px rgba(124,58,237,0.12); border-color: color-mix(in srgb,var(--accent) 60%, transparent); background: linear-gradient(180deg, color-mix(in srgb,var(--accent) 10%, var(--panel) 90%), var(--accent)); color:#fff }
-
-/* erase button distinct */
-.erase-btn{ min-width:64px; background: linear-gradient(180deg, rgba(255,240,240,0.9), rgba(255,240,240,0.6)); border-color: color-mix(in srgb,var(--danger) 18%, transparent); color:var(--danger) }
-
-/* small animation for count updates */
-.count-update {
-  display:inline-block;transform-origin:center;animation:count-pop 360ms cubic-bezier(.2,.9,.25,1);
-}
-@keyframes count-pop {
-  0%{ transform: scale(.8); opacity:0 }
-  50%{ transform: scale(1.12); opacity:1 }
-  100%{ transform: scale(1); opacity:1 }
+select:focus,
+button:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
-/* -------------------------
-   Side panel
-   ------------------------- */
-.side-panel{
-  background:var(--panel);padding:12px;border-radius:12px;border:1px solid var(--glass-border);box-shadow:var(--shadow-sm);
-  display:flex;flex-direction:column;gap:10px;min-height:180px;
-}
-.side-panel button{width:100%;padding:10px;border-radius:10px;font-weight:800;background:linear-gradient(180deg,transparent,transparent);cursor:pointer}
-.leaderboard{padding:8px;border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent);border:1px dashed var(--glass-border)}
-.leaderboard ol{margin:0;padding-left:18px;color:var(--muted)}
+button:hover { background: var(--bg-soft); }
+button:active { transform: translateY(1px); }
 
-/* -------------------------
+#toggle-pencil.active {
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 2px var(--primary-ghost);
+  background: var(--primary-ghost);
+}
+
+#toggle-theme[aria-pressed="true"] {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 2px var(--primary-ghost);
+  background: var(--primary-ghost);
+}
+
+/* -----------------------------
+   Info bar
+   ----------------------------- */
+.info-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  margin: 16px 0;
+}
+
+.status {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  font-size: .95rem;
+}
+
+#timer { font-variant-numeric: tabular-nums; }
+#mistakes { color: var(--muted); }
+
+.instructions { color: var(--muted); }
+
+/* -----------------------------
+   Main layout adjustments
+   ----------------------------- */
+/* Keep main.container single-column to avoid interfering with other elements */
+main.container {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+/* The .game area (board + digit-bank + message)
+   - Mobile: stacked
+   - Desktop: two-column: board left, digit bank right
+*/
+.game {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: 1fr; /* mobile default: single column */
+}
+
+/* -----------------------------
+   Sudoku board
+   ----------------------------- */
+.sudoku-board {
+  --size: min(92vw, 560px);
+  width: var(--size);
+  aspect-ratio: 1 / 1;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  grid-auto-rows: 1fr;
+  gap: var(--cell-gap);
+  padding: 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  position: relative;
+  z-index: 1;
+}
+
+/* 3x3 block separators */
+.sudoku-board::before,
+.sudoku-board::after {
+  content: "";
+  position: absolute;
+  inset: 12px;
+  pointer-events: none;
+  border-radius: calc(var(--radius) - 6px);
+  background:
+    linear-gradient(to right, transparent calc((100%/3) - 1px), var(--border) calc((100%/3) - 1px), var(--border) calc((100%/3) + 1px), transparent calc((100%/3) + 1px),
+                               transparent calc((200%/3) - 1px), var(--border) calc((200%/3) - 1px), var(--border) calc((200%/3) + 1px), transparent calc((200%/3) + 1px)) ,
+    linear-gradient(to bottom, transparent calc((100%/3) - 1px), var(--border) calc((100%/3) - 1px), var(--border) calc((100%/3) + 1px), transparent calc((100%/3) + 1px),
+                               transparent calc((200%/3) - 1px), var(--border) calc((200%/3) - 1px), var(--border) calc((200%/3) + 1px), transparent calc((200%/3) + 1px));
+  z-index: 0;
+  opacity: .9;
+}
+
+.cell-wrapper {
+  position: relative;
+  z-index: 1;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.cell {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-weight: 600;
+  font-size: clamp(18px, 4vw, 24px);
+  text-align: center;
+  letter-spacing: .5px;
+  padding: 0;
+  cursor: default;
+}
+
+.cell.given {
+  background: var(--bg-soft);
+  color: var(--text);
+  font-weight: 700;
+}
+
+.cell:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* Notes */
+.notes {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-auto-rows: 1fr;
+  pointer-events: none;
+  font-size: clamp(9px, 1.8vw, 12px);
+  color: var(--muted);
+}
+
+.note { display: grid; place-items: center; opacity: .85; }
+
+/* Highlights & invalid */
+.cell-wrapper.highlight-row .cell,
+.cell-wrapper.highlight-col .cell,
+.cell-wrapper.highlight-block .cell {
+  background: color-mix(in oklab, var(--bg) 88%, var(--primary) 12%);
+}
+.cell-wrapper.highlight .cell { border-color: var(--accent); }
+.cell.invalid { border-color: var(--danger); color: var(--danger); animation: wiggle .25s ease; }
+@keyframes wiggle { 0%{transform:translateX(0)}25%{transform:translateX(-4px)}50%{transform:translateX(3px)}100%{transform:translateX(0)} }
+
+/* Message / status */
+.message { min-height: 20px; text-align: center; color: var(--muted); }
+
+/* -----------------------------
+   Digit bank (mobile default below board)
+   ----------------------------- */
+.digit-bank {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  align-items: stretch;
+  justify-items: stretch;
+  padding: 6px 0;
+}
+
+/* Buttons */
+.digit-btn {
+  display: grid;
+  grid-template-rows: auto auto;
+  place-items: center;
+  gap: 2px;
+  padding: 8px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  user-select: none;
+  transition: transform .06s ease, background .12s ease, border-color .12s ease;
+  min-height: 44px;
+}
+
+.digit-btn:hover { background: var(--bg-soft); }
+.digit-btn:active { transform: translateY(1px); }
+
+.digit-btn[disabled],
+.digit-btn[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+
+.digit-btn .digit { font-weight: 700; font-size: 1rem; line-height: 1; }
+.digit-btn .count { font-size: .75rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* count animation */
+.count-update { animation: bump .24s ease; }
+@keyframes bump { 0%{transform:scale(1)}50%{transform:scale(1.14)}100%{transform:scale(1)} }
+
+/* Erase */
+#erase-btn { border-color: var(--border); }
+#erase-btn:hover { background: var(--bg-soft); }
+
+/* -----------------------------
+   Side panel (optional)
+   ----------------------------- */
+.side-panel { display: grid; gap: 8px; }
+.leaderboard { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
+.leaderboard strong { display:block;margin-bottom:8px; }
+.leaderboard ol { margin:0;padding-left:18px; }
+
+/* -----------------------------
    Footer
-   ------------------------- */
-.site-footer{ text-align:center;color:var(--muted);font-size:0.86rem;padding:8px }
+   ----------------------------- */
+.site-footer { margin-top: 12px; padding: 16px 0 24px; color: var(--muted); border-top: 1px solid var(--border); }
 
-/* -------------------------
-   Small screens & adjustments
-   ------------------------- */
-@media (max-width:980px){
-  .sudoku-board{ transform:none; padding:10px }
-  :root{ --cell-size: clamp(36px, 9.5vw, 56px) }
-  .digit-bank{ gap:8px }
+/* -----------------------------
+   No-JS fallback
+   ----------------------------- */
+.noscript-warning { margin: 12px; padding: 12px; background: var(--danger); color: #fff; border-radius: var(--radius); }
+
+/* -----------------------------
+   Desktop layout: put digit-bank to the right of the board
+   - adjust at a reasonable desktop breakpoint
+   ----------------------------- */
+@media (min-width: 900px) {
+  /* Make .game two-column: left = board & message, right = digit bank (vertical) */
+  .game {
+    grid-template-columns: 1fr 180px;
+    align-items: start;
+    gap: 20px;
+  }
+
+  /* Ensure board uses left column and is full-width (no centered small width) */
+  .sudoku-board {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    --size: 100%; /* ensures aspect fits column width */
+  }
+
+  /* Place digit-bank into right column as vertical stack */
+  .digit-bank {
+    grid-column: 2 / 3;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: stretch;
+    justify-content: flex-start;
+    padding: 6px;
+    position: sticky;
+    top: 96px; /* keep below header (approx); adjust if header height differs */
+    height: fit-content;
+  }
+
+  /* Make digit buttons full width and taller */
+  .digit-btn, #erase-btn {
+    width: 100%;
+    min-height: 48px;
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .digit-btn .digit { font-size: 1.1rem; }
+  .digit-btn .count { font-size: .85rem; text-align: right; margin-left: auto; color: var(--muted); }
+
+  /* Keep message below the board in left column (it flows naturally) */
+  .message { grid-column: 1 / 2; }
 }
-@media (max-width:640px){
-  .header-inner{ padding:12px }
-  .controls button, .controls select{ padding:8px 10px; font-size:0.95rem }
-  .digit-btn{ min-width:48px; min-height:48px; font-size:1rem }
-  main.container{ padding-bottom:20px }
+
+/* -----------------------------
+   Smaller breakpoints
+   ----------------------------- */
+@media (max-width: 720px) {
+  .controls { width: 100%; }
+  .sudoku-board { --size: min(94vw, 520px); padding: 10px; }
+  .digit-bank { grid-template-columns: repeat(5, 1fr); }
 }
 
-/* -------------------------
-   Fancy entrance for board
-   ------------------------- */
-.sudoku-board{ transform-origin:center top; animation: board-entrance 640ms cubic-bezier(.2,.9,.2,1) }
-@keyframes board-entrance {
-  0%{ transform: translateY(-8px) scale(.996); opacity:0 }
-  60%{ transform: translateY(6px) scale(1.01); opacity:1 }
-  100%{ transform: translateY(0) scale(1) }
+@media (max-width: 420px) {
+  .title { font-size: 1.05rem; }
+  select, button { padding: 7px 10px; }
+  .info-bar { padding: 8px 10px; }
+  .sudoku-board { --size: 94vw; }
+  .digit-bank { grid-template-columns: repeat(5, 1fr); }
 }
 
-/* -------------------------
-   Print rules
-   ------------------------- */
-@media print{
-  body{ background:#fff; color:#000 }
-  .controls, .side-panel, .site-footer, .header-inner, .digit-bank{ display:none }
-  .sudoku-board{ box-shadow:none;border:none;padding:0 }
+/* -----------------------------
+   Print
+   ----------------------------- */
+@media print {
+  .site-header, .info-bar, .side-panel, .digit-bank, .site-footer { display: none !important; }
+  .sudoku-board { --size: 18cm; box-shadow: none; background: #fff; }
+  .cell { background: #fff; }
 }
-
-/* -------------------------
-   Accessibility helpers
-   ------------------------- */
-:focus{ outline-offset:3px }
-button:focus{ outline: 3px solid color-mix(in srgb,var(--accent) 22%, transparent); outline-offset:2px }
-
-/* ========================================================================
-   Integration notes:
-   - script.js should render each cell as:
-       <div class="cell-wrapper" data-row="R" data-col="C" data-box="B">
-         <input class="cell" ... />
-         <div class="notes"> 9 .note </div>
-       </div>
-   - To toggle dark theme: document.documentElement.setAttribute('data-theme','dark')
-   - For count update animation, JS can add .count-update to the .count element briefly.
-   ======================================================================== */
