@@ -285,52 +285,86 @@ main.container {
 .leaderboard { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:8px; }
 
 /* -----------------------------
-   Digit bank (default 5 columns like mobile)
+   Digit bank — fixes (paste at end, overrides previous rules)
+   - square-ish buttons, centered content, stable counts
+   - responsive: keeps 5 columns on small screens but buttons keep good aspect
    ----------------------------- */
 .digit-bank {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 6px;               /* reduced gap */
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;               /* already compact */
   align-items: stretch;
-  padding: 4px 2px;       /* reduced padding */
-  margin-top: 4px;        /* bring closer to board */
+  padding: 4px 2px;
+  margin-top: 4px;
 }
 
+/* Make each button behave like a square tile with centered content.
+   Use flex for reliable vertical alignment (instead of grid-template-rows). */
 .digit-btn {
-  display: grid; grid-template-rows: auto auto; place-items:center;
-  gap: 2px; padding:8px; border-radius:8px; border:1px solid var(--border);
-  background:var(--panel); color:var(--text); cursor:pointer; user-select:none;
-  transition: transform .06s ease, background .12s ease;
-}
-.digit-btn:hover { background: var(--bg-soft); }
-.digit-btn:active { transform: translateY(1px); }
-.digit-btn[disabled] { opacity:.5; cursor:not-allowed; }
-.digit-btn .digit { font-weight:800; font-size:1rem; }
-.digit-btn .count { font-size:.75rem; color:var(--muted); font-variant-numeric:tabular-nums; }
-.count-update { animation: bump .24s ease; }
-@keyframes bump { 0%{transform:scale(1)}50%{transform:scale(1.12)}100%{transform:scale(1)} }
-
-/* erase */
-#erase-btn { border-color:var(--border); }
-
-/* footer */
-.site-footer { margin-top:8px; padding:10px 0 16px; color:var(--muted); border-top:1px solid var(--border); }
-
-/* no-js fallback */
-.noscript-warning { margin:12px; padding:10px; background:var(--danger); color:#fff; border-radius:8px; }
-
-/* responsive: keep mobile-like look but tweak small screens */
-@media (max-width: 420px) {
-  .container { padding:8px; }
-  .header-inner { height:48px; padding:6px; gap:6px; }
-  select, button { padding:6px 8px; font-size:.95rem; }
-  .sudoku-board { width: min(96vw, 420px); padding:6px; }
-  .digit-bank { grid-template-columns: repeat(5,1fr); gap:6px; }
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;               /* smaller padding so content fits */
+  min-height: 46px;          /* ensures touch target */
+  aspect-ratio: 1 / 1;       /* keep near-square buttons */
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+  transition: transform .06s ease, background .12s ease, box-shadow .12s ease;
+  box-shadow: none;
 }
 
-/* print minimal */
-@media print {
-  .site-header, .info-bar, .side-panel, .digit-bank, .site-footer { display:none !important; }
-  .sudoku-board { --size: 18cm; box-shadow:none; background:#fff; border:none; }
-  .cell { background:#fff; color:#000; border:1px solid #000; }
+/* Hover / active affordances */
+.digit-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 14px rgba(0,0,0,.04); background: color-mix(in oklab, var(--panel) 92%, var(--bg-soft) 8%); }
+.digit-btn:active { transform: translateY(0); box-shadow: none; }
+
+/* Disabled state */
+.digit-btn[disabled],
+.digit-btn[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Digit and count styling */
+.digit-btn .digit {
+  font-weight: 800;
+  font-size: clamp(1rem, 2.6vw, 1.1rem);
+  line-height: 1;
+  display: block;
+  margin: 0;
+}
+
+.digit-btn .count {
+  font-size: .72rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  display: block;
+  line-height: 1;
+}
+
+/* Make erase button visually distinct if it's implemented as .digit-btn + #erase-btn */
+#erase-btn {
+  border-color: var(--border);
+  background: linear-gradient(180deg, var(--panel), color-mix(in oklab, var(--panel) 92%, var(--danger) 8%));
+}
+
+/* If you want erase to be wider: let #erase-btn span two columns on grid layouts */
+/* uncomment if desired:
+#erase-btn {
+  grid-column: span 2;
+}
+*/
+
+/* Ensure responsive behaviour: on very narrow screens keep buttons usable */
+@media (max-width: 360px) {
+  .digit-btn { min-height: 42px; padding: 4px; gap: 3px; }
+  .digit-btn .digit { font-size: .98rem; }
+  .digit-btn .count { font-size: .68rem; }
 }
