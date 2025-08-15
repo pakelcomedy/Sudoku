@@ -285,45 +285,45 @@ main.container {
 .leaderboard { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:8px; }
 
 /* -----------------------------
-   Digit bank — fixes (paste at end, overrides previous rules)
-   - square-ish buttons, centered content, stable counts
-   - responsive: keeps 5 columns on small screens but buttons keep good aspect
+   Digit bank — stable square-like buttons with internal count
+   Replace/override previous .digit-bank / .digit-btn rules with this
    ----------------------------- */
 .digit-bank {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 6px;               /* already compact */
+  gap: 6px;
   align-items: stretch;
   padding: 4px 2px;
   margin-top: 4px;
 }
 
-/* Make each button behave like a square tile with centered content.
-   Use flex for reliable vertical alignment (instead of grid-template-rows). */
+/* Use fixed-ish height (responsive via clamp) and flex centering.
+   Remove aspect-ratio so two-line content won't overflow outside the box. */
 .digit-btn {
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
   gap: 4px;
-  padding: 6px;               /* smaller padding so content fits */
-  min-height: 46px;          /* ensures touch target */
-  aspect-ratio: 1 / 1;       /* keep near-square buttons */
+  padding: 6px;
+  height: clamp(44px, 12vw, 56px); /* responsive but bounded */
+  min-height: 42px;
   border-radius: 8px;
   border: 1px solid var(--border);
   background: var(--panel);
   color: var(--text);
   cursor: pointer;
   user-select: none;
+  overflow: hidden; /* IMPORTANT: keep count inside */
   transition: transform .06s ease, background .12s ease, box-shadow .12s ease;
-  box-shadow: none;
 }
 
-/* Hover / active affordances */
+/* hover/active */
 .digit-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 14px rgba(0,0,0,.04); background: color-mix(in oklab, var(--panel) 92%, var(--bg-soft) 8%); }
 .digit-btn:active { transform: translateY(0); box-shadow: none; }
 
-/* Disabled state */
+/* disabled */
 .digit-btn[disabled],
 .digit-btn[aria-disabled="true"] {
   opacity: 0.5;
@@ -332,39 +332,36 @@ main.container {
   box-shadow: none;
 }
 
-/* Digit and count styling */
+/* digit & count: keep line-height tight so they fit */
 .digit-btn .digit {
   font-weight: 800;
-  font-size: clamp(1rem, 2.6vw, 1.1rem);
+  font-size: clamp(.98rem, 2.6vw, 1.05rem);
+  line-height: 1;
+  margin: 0;
+  display: block;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+.digit-btn .count {
+  font-size: .68rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
   line-height: 1;
   display: block;
   margin: 0;
 }
 
-.digit-btn .count {
-  font-size: .72rem;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-  display: block;
-  line-height: 1;
-}
-
-/* Make erase button visually distinct if it's implemented as .digit-btn + #erase-btn */
+/* erase button distinction (if used) */
 #erase-btn {
   border-color: var(--border);
-  background: linear-gradient(180deg, var(--panel), color-mix(in oklab, var(--panel) 92%, var(--danger) 8%));
 }
 
-/* If you want erase to be wider: let #erase-btn span two columns on grid layouts */
-/* uncomment if desired:
-#erase-btn {
-  grid-column: span 2;
-}
-*/
-
-/* Ensure responsive behaviour: on very narrow screens keep buttons usable */
+/* very narrow screens: slightly reduce height & font */
 @media (max-width: 360px) {
-  .digit-btn { min-height: 42px; padding: 4px; gap: 3px; }
+  .digit-btn { height: clamp(40px, 14vw, 48px); padding: 4px; gap: 3px; }
   .digit-btn .digit { font-size: .98rem; }
-  .digit-btn .count { font-size: .68rem; }
+  .digit-btn .count { font-size: .64rem; }
 }
+
