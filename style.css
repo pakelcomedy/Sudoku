@@ -70,7 +70,7 @@ body {
 .container {
   max-width: var(--container-max);
   margin: 0 auto;
-  padding: 12px;
+  padding: 6px; /* compact: reduced padding */
 }
 
 /* small helpers */
@@ -82,7 +82,7 @@ body {
 }
 
 /* -----------------------------
-   Header & Controls (lebih kecil)
+   Header & Controls (compact, single-row)
    ----------------------------- */
 .site-header {
   position: sticky;
@@ -91,61 +91,61 @@ body {
   background: var(--bg);
   border-bottom: 1px solid var(--border);
   backdrop-filter: blur(6px);
+  margin-bottom: 4px; /* bring info-bar closer */
 }
 
 .header-inner {
   display: flex;
   align-items: center;
-  gap: 6px;               /* lebih rapat */
+  gap: 8px; /* slightly tighter */
   justify-content: space-between;
-  padding: 6px 6px;       /* lebih kecil */
-  height: 44px;           /* lebih pendek */
+  padding: 6px 6px;     /* reduced */
+  height: 44px;         /* shorter */
   box-sizing: border-box;
-  min-height: 44px;
 }
 
-/* title lebih kecil */
+/* title smaller to save space */
 .title {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: 1rem;
   font-weight: 700;
-  letter-spacing: .15px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  letter-spacing: .2px;
+  display:flex;
+  align-items:center;
+  gap:8px;
 }
 
-/* controls tetap satu baris; tombol lebih kecil */
+/* controls: don't wrap; allow horizontal scroll if overflow */
 .controls {
   display: flex;
-  gap: 6px;
+  gap: 6px; /* tighter */
   align-items: center;
   flex-wrap: nowrap;
   overflow-x: auto;
   padding-bottom: 0;
   -webkit-overflow-scrolling: touch;
-  -ms-overflow-style: none;  /* IE/Edge */
-  scrollbar-width: none;     /* Firefox */
 }
-.controls::-webkit-scrollbar { display: none; } /* Chrome/Safari */
 
-/* kontrol ukuran kecil */
+/* hide scrollbars but still scrollable (lightweight) */
+.controls::-webkit-scrollbar { height: 8px; }
+.controls::-webkit-scrollbar-thumb { background: transparent; }
+
+/* smaller control sizes */
 select,
 button {
   appearance: none;
   border: 1px solid var(--border);
   background: var(--panel);
   color: var(--text);
-  border-radius: 6px;          /* sedikit lebih kecil */
-  padding: 4px 8px;           /* padding dikurangi */
-  font: 500 0.85rem/1 var(--font);
-  height: 32px;               /* konsisten tinggi */
+  border-radius: 8px;
+  padding: 6px 10px;
+  font: 500 0.95rem/1 var(--font);
   cursor: pointer;
   transition: background .12s ease, border-color .12s ease, transform .06s ease;
   white-space: nowrap;
 }
 
-/* fokus & hover (tetap jelas untuk aksesibilitas) */
+/* focus & hover */
 select:focus,
 button:focus {
   outline: 2px solid var(--accent);
@@ -154,7 +154,7 @@ button:focus {
 button:hover { background: var(--bg-soft); }
 button:active { transform: translateY(1px); }
 
-/* states kecil */
+/* small active states */
 #toggle-pencil.active {
   border-color: var(--primary);
   box-shadow: inset 0 0 0 2px var(--primary-ghost);
@@ -166,7 +166,6 @@ button:active { transform: translateY(1px); }
   background: var(--primary-ghost);
 }
 
-
 /* -----------------------------
    Info bar (compact)
    ----------------------------- */
@@ -174,17 +173,17 @@ button:active { transform: translateY(1px); }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 8px 10px;
+  gap: 6px;            /* tighter */
+  padding: 6px 8px;    /* reduced */
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: var(--shadow);
-  margin: 12px 0;
+  margin: 6px 0;       /* bring board closer */
   font-size: .95rem;
 }
 
-.status { display:flex; gap:10px; align-items:center; font-weight:600; }
+.status { display:flex; gap:8px; align-items:center; font-weight:600; }
 #timer { font-variant-numeric: tabular-nums; }
 #mistakes { color: var(--muted); font-weight:700; }
 .instructions { color: var(--muted); font-size: .9rem; }
@@ -195,10 +194,10 @@ button:active { transform: translateY(1px); }
 main.container {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 12px;
+  gap: 6px; /* tighter between sections */
 }
 
-.game { display:grid; gap:12px; }
+.game { display:grid; gap:6px; }
 
 /* smaller, compact board */
 .sudoku-board {
@@ -209,12 +208,14 @@ main.container {
   grid-template-columns: repeat(9, 1fr);
   grid-auto-rows: 1fr;
   gap: var(--cell-gap);
-  padding: 8px;
+  padding: 6px; /* reduced */
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: var(--shadow);
   position: relative;
+  margin-top: 0;
+  margin-bottom: 4px;
 }
 
 /* 3x3 separators simplified */
@@ -277,7 +278,7 @@ main.container {
 @keyframes wiggle { 0%{transform:translateX(0)}25%{transform:translateX(-4px)}50%{transform:translateX(3px)}100%{transform:translateX(0)} }
 
 /* message */
-.message { min-height: 18px; text-align:center; color:var(--muted); font-size:.95rem; }
+.message { min-height: 16px; text-align:center; color:var(--muted); font-size:.95rem; margin-top:2px; margin-bottom:2px; }
 
 /* side panel */
 .side-panel { display:grid; gap:8px; }
@@ -289,9 +290,10 @@ main.container {
 .digit-bank {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 8px;
+  gap: 6px;               /* reduced gap */
   align-items: stretch;
-  padding: 6px 4px;
+  padding: 4px 2px;       /* reduced padding */
+  margin-top: 4px;        /* bring closer to board */
 }
 
 .digit-btn {
@@ -312,14 +314,14 @@ main.container {
 #erase-btn { border-color:var(--border); }
 
 /* footer */
-.site-footer { margin-top:12px; padding:12px 0 20px; color:var(--muted); border-top:1px solid var(--border); }
+.site-footer { margin-top:8px; padding:10px 0 16px; color:var(--muted); border-top:1px solid var(--border); }
 
 /* no-js fallback */
 .noscript-warning { margin:12px; padding:10px; background:var(--danger); color:#fff; border-radius:8px; }
 
 /* responsive: keep mobile-like look but tweak small screens */
 @media (max-width: 420px) {
-  .container { padding:10px; }
+  .container { padding:8px; }
   .header-inner { height:48px; padding:6px; gap:6px; }
   select, button { padding:6px 8px; font-size:.95rem; }
   .sudoku-board { width: min(96vw, 420px); padding:6px; }
