@@ -1,12 +1,7 @@
 /* ==========================================================================
    Sudoku — script.js (full rewrite + integrated WebAudio SFX)
-   - Render board + digit bank automatically
-   - Generator + solver (backtracking)
-   - Pencil/notes, erase, auto-check + highlight conflicts
-   - Mistakes counter (count only newly-created invalid cells)
-   - Timer, save/load, leaderboard (localStorage)
-   - Theme toggle wiring
-   - SFX: click/place/erase/error/toggle/win using Web Audio API (no external files)
+   + row/cell-complete animations, per-game mistakes + total mistakes,
+   + service-worker registration for offline play (provide sw.js separately)
    ========================================================================== */
 
 (function () {
@@ -54,6 +49,36 @@
   const btnSave = $id(ID.save);
   const btnLoad = $id(ID.load);
   const eraseBtn = $id(ID.eraseBtn);
+
+  /* -----------------------------
+     Add small CSS for animations (injected)
+     ----------------------------- */
+  (function injectAnimStyles() {
+    const css = `
+    /* completion animations */
+    .cell.complete-anim {
+      animation: cell-complete 650ms cubic-bezier(.2,.9,.2,1);
+      box-shadow: 0 6px 18px rgba(34,197,94,0.14);
+    }
+    @keyframes cell-complete {
+      0% { transform: scale(1); background: color-mix(in oklab, var(--panel) 92%, var(--ok) 8%); }
+      40% { transform: scale(1.12); background: color-mix(in oklab, var(--panel) 80%, var(--ok) 20%); }
+      100% { transform: scale(1); background: var(--panel); }
+    }
+    .row-complete .cell {
+      animation: row-complete-fade 900ms ease forwards;
+    }
+    @keyframes row-complete-fade {
+      0% { transform: translateY(-2px); box-shadow: 0 0 0 rgba(0,0,0,0); }
+      20% { transform: translateY(-6px); box-shadow: 0 10px 28px rgba(34,197,94,0.14); }
+      100% { transform: translateY(0); box-shadow: 0 0 0 rgba(0,0,0,0); }
+    }
+    `;
+    const s = document.createElement('style');
+    s.setAttribute('data-sudoku-anim', 'true');
+    s.appendChild(document.createTextNode(css));
+    document.head && document.head.appendChild(s);
+  })();
 
   /* -----------------------------
      Sound (Web Audio API) — small SFX engine
@@ -122,7 +147,6 @@
 
     playClick() { this._playOsc({ freq: 880, type: 'sine', dur: 0.06, gain: 0.18 }); }
     playPlace() {
-      // two-tone pleasant placement
       this._playOsc({ freq: 660, type: 'sine', dur: 0.10, gain: 0.16 });
       this._playOsc({ freq: 880, type: 'triangle', dur: 0.06, when: 0.06, gain: 0.12 });
     }
@@ -134,7 +158,6 @@
     playToggle() { this._playOsc({ freq: 1100, type: 'triangle', dur: 0.06, gain: 0.12 }); }
     playStart() { this._playOsc({ freq: 520, type: 'sine', dur: 0.09, gain: 0.14 }); }
     playWin() {
-      // small arpeggio
       this._playOsc({ freq: 880, type: 'sine', dur: 0.09, gain: 0.14, when: 0 });
       this._playOsc({ freq: 1100, type: 'sine', dur: 0.09, gain: 0.13, when: 0.09 });
       this._playOsc({ freq: 1320, type: 'sine', dur: 0.09, gain: 0.12, when: 0.18 });
@@ -142,8 +165,6 @@
   }
 
   const sfx = new SFX();
-
-  // Ensure audio created/resumed on first user gesture: call sfx.resume() inside user handlers.
 
   /* -----------------------------
      State & constants
@@ -158,7 +179,7 @@
   let mistakesCount = 0;
   const invalidSet = new Set();
 
-  const LS_KEYS = { SAVED: 'sudoku_saved_v4', LEAD: 'sudoku_lead_v4' };
+  const LS_KEYS = { SAVED: 'sudoku_saved_v4', LEAD: 'sudoku_lead_v4', TOTAL_MISTAKES: 'sudoku_total_mistakes' };
 
   const DIFF = {
     easy: { minClues: 40, maxClues: 50 },
@@ -201,6 +222,21 @@
     if (!messageEl) return;
     messageEl.textContent = txt;
     if (ms > 0) setTimeout(() => { if (messageEl && messageEl.textContent === txt) messageEl.textContent = ''; }, ms);
+  }
+
+  /* -----------------------------
+     Persisted total mistakes (all-time)
+     ----------------------------- */
+  function getTotalMistakesAllTime() {
+    const raw = localStorage.getItem(LS_KEYS.TOTAL_MISTAKES);
+    const n = raw ? Number(raw) : 0;
+    return Number.isInteger(n) ? n : 0;
+  }
+  function addToTotalMistakesAllTime(delta) {
+    const cur = getTotalMistakesAllTime();
+    const next = Math.max(0, cur + Number(delta || 0));
+    localStorage.setItem(LS_KEYS.TOTAL_MISTAKES, String(next));
+    return next;
   }
 
   /* -----------------------------
@@ -349,7 +385,7 @@
   function attachCellListeners(wrapper, inp) {
     wrapper.addEventListener('click', (e) => {
       e.preventDefault();
-      sfx.resume(); // resume audio on user interaction
+      sfx.resume();
       const r = +wrapper.dataset.row;
       const c = +wrapper.dataset.col;
       selectCell(r, c);
@@ -448,7 +484,8 @@
 
       if (newlyInvalid.length > 0) {
         mistakesCount += newlyInvalid.length;
-        updateMistakesUI(true);
+        const newTotal = addToTotalMistakesAllTime(newlyInvalid.length);
+        updateMistakesUI(true, newTotal);
         sfx.resume();
         sfx.playError();
       }
@@ -456,6 +493,9 @@
       autoCheckAndSyncInvalids();
       sfx.resume();
       sfx.playPlace();
+
+      // success: animate cell and check row
+      handleCellComplete(r, c);
     }
 
     updateDigitCounts(true);
@@ -550,7 +590,7 @@
   }
 
   /* -----------------------------
-     Animations
+     Animations for invalid + completions
      ----------------------------- */
   function animateInvalid(wrapper) {
     const el = wrapper.querySelector('.cell');
@@ -565,15 +605,18 @@
     } catch (e) { }
   }
 
-  function animateMistakesCounter() {
-    if (!mistakesEl || !mistakesEl.animate) return;
-    try {
-      mistakesEl.animate([
-        { transform: 'scale(1)' },
-        { transform: 'scale(1.06)' },
-        { transform: 'scale(1)' }
-      ], { duration: 360, easing: 'ease-out' });
-    } catch (e) { }
+  function animateCellComplete(wrapper) {
+    const el = wrapper.querySelector('.cell');
+    if (!el) return;
+    el.classList.add('complete-anim');
+    setTimeout(() => el.classList.remove('complete-anim'), 800);
+  }
+
+  function animateRowComplete(rowIndex) {
+    // add class to wrappers in that row to trigger animation, then remove
+    const rowWrappers = Array.from(boardEl.querySelectorAll(`.cell-wrapper[data-row="${rowIndex}"]`));
+    rowWrappers.forEach(w => w.classList.add('row-complete'));
+    setTimeout(() => rowWrappers.forEach(w => w.classList.remove('row-complete')), 900);
   }
 
   /* -----------------------------
@@ -679,6 +722,49 @@
   }
 
   function deepCopy(arr) { return arr.map(r => r.slice()); }
+
+  /* -----------------------------
+     Completion helpers: cell & row completed detection
+     ----------------------------- */
+  function isCellCompleted(r, c) {
+    const cell = grid[r][c];
+    if (!cell || cell.value === null) return false;
+    if (solutionGrid && Array.isArray(solutionGrid)) {
+      return solutionGrid[r][c] === cell.value;
+    }
+    // fallback: cell has no conflicts
+    return findConflictsForCell(r, c).length === 0;
+  }
+
+  function isRowCompleted(r) {
+    // all cells filled and (match solution if available) or no conflicts in row
+    for (let c = 0; c < 9; c++) {
+      if (grid[r][c].value === null) return false;
+      if (solutionGrid && Array.isArray(solutionGrid) && grid[r][c].value !== solutionGrid[r][c]) return false;
+    }
+    // if no solutionGrid: ensure row has no conflicts
+    if (!solutionGrid) {
+      for (let c = 0; c < 9; c++) if (findConflictsForCell(r, c).length > 0) return false;
+    }
+    return true;
+  }
+
+  function handleCellComplete(r, c) {
+    const w = getWrapper(r, c);
+    if (!w) return;
+    if (isCellCompleted(r, c)) {
+      animateCellComplete(w);
+      sfx.resume(); sfx.playClick();
+      setMessage('Good! Cell complete.', 900);
+
+      // check row completion
+      if (isRowCompleted(r)) {
+        animateRowComplete(r);
+        sfx.resume(); sfx.playWin();
+        setMessage('Nice — row complete!', 1600);
+      }
+    }
+  }
 
   /* -----------------------------
      Public actions
@@ -948,19 +1034,29 @@
     }
   }
 
-  function updateMistakesUI(animate = false) {
+  function updateMistakesUI(animate = false, totalAllTime = null) {
     if (!mistakesEl) return;
-    mistakesEl.textContent = `Mistakes: ${mistakesCount}`;
+    const total = totalAllTime !== null ? totalAllTime : getTotalMistakesAllTime();
+    mistakesEl.textContent = `Mistakes: ${mistakesCount} (Total: ${total})`;
     if (animate) {
       animateMistakesCounter();
-      sfx.resume();
-      sfx.playError();
     }
   }
 
   /* -----------------------------
-     Init
+     Init + service worker registration (offline)
      ----------------------------- */
+  function registerServiceWorker() {
+    if (!('serviceWorker' in navigator)) return;
+    // try to register /sw.js at site root
+    navigator.serviceWorker.register('/sw.js').then(reg => {
+      // success
+      // console.log('SW registered', reg);
+    }).catch(err => {
+      // console.log('SW register failed', err);
+    });
+  }
+
   function init() {
     if (boardEl) ensureBoardDOM();
     if (digitBankEl) ensureDigitBankDOM();
@@ -969,12 +1065,11 @@
     wireUI();
     renderLeaderboard();
 
-    const saved = localStorage.getItem(LS_KEYS.SAVED);
-    if (saved) {
-      startNewGame(selDifficulty ? selDifficulty.value : 'medium');
-    } else {
-      startNewGame(selDifficulty ? selDifficulty.value : 'medium');
-    }
+    // register service worker for offline support
+    try { registerServiceWorker(); } catch (e) {}
+
+    // Start a new game by default
+    startNewGame(selDifficulty ? selDifficulty.value : 'medium');
 
     setTimeout(() => setMessage('Klik kotak, lalu pilih angka di bar bawah. Double-click untuk pencil.'), 1200);
   }
@@ -990,7 +1085,7 @@
     solveSudoku,
     setPencil,
     getMistakes: () => mistakesCount,
-    sfx // expose for console control (e.g., _sudoku.sfx.setVolume(0.05))
+    sfx // e.g., _sudoku.sfx.setVolume(0.06)
   };
 
   // Run init on DOMContentLoaded

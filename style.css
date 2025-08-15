@@ -1,5 +1,7 @@
-/* ==========================================================================
+/* ========================================================================== 
    Sudoku — style.css (final: compact layout + reliable digit bank badges)
+   - minor polish: removed erase-button gradient, improved focus states,
+     ensured disabled buttons don't accept pointer events
    ========================================================================== */
 
 /* -----------------------------
@@ -360,19 +362,33 @@ main.container {
 .digit-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,0.06); background: color-mix(in oklab, var(--panel) 92%, var(--bg-soft) 8%); }
 .digit-btn:active { transform: translateY(0); box-shadow: none; }
 
-/* disabled state */
+/* focus-visible for better keyboard accessibility */
+.digit-btn:focus-visible {
+  outline: 3px solid color-mix(in oklab, var(--accent) 70%, transparent 30%);
+  outline-offset: 3px;
+}
+
+/* disabled state: ensure no pointer interactions */
 .digit-btn[disabled],
 .digit-btn[aria-disabled="true"] {
   opacity: .55;
   cursor: not-allowed;
   transform: none;
   box-shadow: none;
+  pointer-events: none;
 }
 
-/* erase button (if implemented as digit-btn with id) */
+/* erase button: NO GRADIENT — use same panel background and a danger accent for the icon */
 #erase-btn {
   border-color: var(--border);
-  background: linear-gradient(180deg, var(--panel), color-mix(in oklab, var(--panel) 92%, var(--danger) 8%));
+  background: var(--panel);         /* removed gradient (user requested) */
+  color: var(--danger);             /* make erase symbol stand out */
+}
+
+/* when erase is focused, keep accessible ring */
+#erase-btn:focus-visible {
+  outline: 3px solid color-mix(in oklab, var(--danger) 60%, transparent 40%);
+  outline-offset: 3px;
 }
 
 /* bump animation for count updates (JS will toggle .count-update) */
