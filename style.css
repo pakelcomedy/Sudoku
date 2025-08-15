@@ -82,7 +82,7 @@ body {
 }
 
 /* -----------------------------
-   Header & Controls (compact, single-row)
+   Header & Controls (lebih kecil)
    ----------------------------- */
 .site-header {
   position: sticky;
@@ -96,55 +96,56 @@ body {
 .header-inner {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;               /* lebih rapat */
   justify-content: space-between;
-  padding: 8px 6px;     /* kecilkan tinggi header */
-  height: 52px;         /* tetap satu baris */
+  padding: 6px 6px;       /* lebih kecil */
+  height: 44px;           /* lebih pendek */
   box-sizing: border-box;
+  min-height: 44px;
 }
 
-/* title smaller to save space */
+/* title lebih kecil */
 .title {
   margin: 0;
-  font-size: 1rem;
+  font-size: 0.95rem;
   font-weight: 700;
-  letter-spacing: .2px;
-  display:flex;
-  align-items:center;
-  gap:8px;
+  letter-spacing: .15px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
-/* controls: don't wrap; allow horizontal scroll if overflow */
+/* controls tetap satu baris; tombol lebih kecil */
 .controls {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
   flex-wrap: nowrap;
   overflow-x: auto;
-  padding-bottom: 2px;
+  padding-bottom: 0;
   -webkit-overflow-scrolling: touch;
+  -ms-overflow-style: none;  /* IE/Edge */
+  scrollbar-width: none;     /* Firefox */
 }
+.controls::-webkit-scrollbar { display: none; } /* Chrome/Safari */
 
-/* hide scrollbars but still scrollable (lightweight) */
-.controls::-webkit-scrollbar { height: 8px; }
-.controls::-webkit-scrollbar-thumb { background: transparent; }
-
-/* smaller control sizes */
+/* kontrol ukuran kecil */
 select,
 button {
   appearance: none;
   border: 1px solid var(--border);
   background: var(--panel);
   color: var(--text);
-  border-radius: 8px;
-  padding: 6px 10px;
-  font: 500 0.95rem/1 var(--font);
+  border-radius: 6px;          /* sedikit lebih kecil */
+  padding: 4px 8px;           /* padding dikurangi */
+  font: 500 0.85rem/1 var(--font);
+  height: 32px;               /* konsisten tinggi */
   cursor: pointer;
   transition: background .12s ease, border-color .12s ease, transform .06s ease;
   white-space: nowrap;
 }
 
-/* focus & hover */
+/* fokus & hover (tetap jelas untuk aksesibilitas) */
 select:focus,
 button:focus {
   outline: 2px solid var(--accent);
@@ -153,7 +154,7 @@ button:focus {
 button:hover { background: var(--bg-soft); }
 button:active { transform: translateY(1px); }
 
-/* small active states */
+/* states kecil */
 #toggle-pencil.active {
   border-color: var(--primary);
   box-shadow: inset 0 0 0 2px var(--primary-ghost);
@@ -164,6 +165,7 @@ button:active { transform: translateY(1px); }
   box-shadow: inset 0 0 0 2px var(--primary-ghost);
   background: var(--primary-ghost);
 }
+
 
 /* -----------------------------
    Info bar (compact)
