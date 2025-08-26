@@ -5,13 +5,25 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <meta name="description" content="Sudoku — static HTML/CSS/JS. Ringan, responsif, aksesibel. Board 9×9, difficulty, timer, save progress." />
   <title>Sudoku — Static</title>
-<link rel="icon" type="image/png" href="18666348.png">
 
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
 
-  <!-- Link ke file CSS terpisah -->
+  <!-- PWA manifest -->
+  <link rel="manifest" href="manifest.json">
+
+  <!-- iOS (Safari) -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+
+  <!-- Theme color -->
+  <meta name="theme-color" content="#0b0f14">
+
+  <!-- CSS -->
   <link rel="stylesheet" href="style.css">
 
-  <!-- Script utama terpisah (defer supaya DOM siap) -->
+  <!-- Script utama (defer supaya DOM siap) -->
   <script defer src="script.js"></script>
 
   <!-- Baseline kecil supaya .hidden benar-benar tersembunyi sebelum style.css dimuat -->
@@ -41,7 +53,7 @@
 
         <button id="toggle-pencil" type="button" title="Toggle Pencil Mode" aria-pressed="false" aria-label="Mode catatan (pencil)">Pencil</button>
         <button id="toggle-theme" type="button" title="Toggle Theme" aria-pressed="false" aria-label="Ganti tema terang/gelap">Theme</button>
-                <button id="reset" type="button" title="Reset" aria-label="Reset ke kondisi awal">Reset</button>
+        <button id="reset" type="button" title="Reset" aria-label="Reset ke kondisi awal">Reset</button>
       </div>
     </div>
   </header>
@@ -51,19 +63,16 @@
     <section class="info-bar" aria-hidden="false">
       <div class="status" role="status" aria-live="polite">
         <span id="timer">00:00</span>
-        <!-- Mistakes disembunyikan (dipertahankan di DOM agar script.js yang mencari elemen tidak error) -->
         <span id="mistakes" class="hidden" aria-live="polite">Mistakes: 0</span>
       </div>
     </section>
 
     <!-- Game area -->
     <section id="game" class="game" aria-label="Sudoku game" role="application">
-      <!-- Board: script.js akan merender 9x9 .cell-wrapper di dalam elemen ini -->
       <div id="sudoku-board" class="sudoku-board" role="grid" aria-label="Papan Sudoku 9 per 9" tabindex="0">
         <!-- Kosong — akan diisi oleh script.js -->
       </div>
 
-      <!-- Template (progressive enhancement) -->
       <template id="cell-template">
         <div class="cell-wrapper" role="gridcell" data-row="0" data-col="0" data-box="0">
           <input
@@ -77,7 +86,6 @@
             readonly
           />
           <div class="notes" aria-hidden="true">
-            <!-- 9 placeholders untuk catatan (pencil) -->
             <div class="note" data-n="1"></div><div class="note" data-n="2"></div><div class="note" data-n="3"></div>
             <div class="note" data-n="4"></div><div class="note" data-n="5"></div><div class="note" data-n="6"></div>
             <div class="note" data-n="7"></div><div class="note" data-n="8"></div><div class="note" data-n="9"></div>
@@ -85,54 +93,24 @@
         </div>
       </template>
 
-      <!-- Live message -->
       <div id="message" class="message" role="status" aria-live="polite"></div>
 
-      <!-- Digit bank: tombol angka 1-9 + counter sisa -->
       <div id="digit-bank" class="digit-bank" role="toolbar" aria-label="Pilih angka">
-        <button class="digit-btn" data-digit="1" aria-pressed="false" title="Angka 1">
-          <span class="digit">1</span>
-          <span class="count" aria-hidden="true">9</span>
-        </button>
-        <button class="digit-btn" data-digit="2" aria-pressed="false" title="Angka 2">
-          <span class="digit">2</span>
-          <span class="count" aria-hidden="true">9</span>
-        </button>
-        <button class="digit-btn" data-digit="3" aria-pressed="false" title="Angka 3">
-          <span class="digit">3</span>
-          <span class="count" aria-hidden="true">9</span>
-        </button>
-        <button class="digit-btn" data-digit="4" aria-pressed="false" title="Angka 4">
-          <span class="digit">4</span>
-          <span class="count" aria-hidden="true">9</span>
-        </button>
-        <button class="digit-btn" data-digit="5" aria-pressed="false" title="Angka 5">
-          <span class="digit">5</span>
-          <span class="count" aria-hidden="true">9</span>
-        </button>
-        <button class="digit-btn" data-digit="6" aria-pressed="false" title="Angka 6">
-          <span class="digit">6</span>
-          <span class="count" aria-hidden="true">9</span>
-        </button>
-        <button class="digit-btn" data-digit="7" aria-pressed="false" title="Angka 7">
-          <span class="digit">7</span>
-          <span class="count" aria-hidden="true">9</span>
-        </button>
-        <button class="digit-btn" data-digit="8" aria-pressed="false" title="Angka 8">
-          <span class="digit">8</span>
-          <span class="count" aria-hidden="true">9</span>
-        </button>
-        <button class="digit-btn" data-digit="9" aria-pressed="false" title="Angka 9">
-          <span class="digit">9</span>
-          <span class="count" aria-hidden="true">9</span>
-        </button>
+        <!-- digit buttons -->
+        <button class="digit-btn" data-digit="1" aria-pressed="false" title="Angka 1"><span class="digit">1</span><span class="count" aria-hidden="true">9</span></button>
+        <button class="digit-btn" data-digit="2" aria-pressed="false" title="Angka 2"><span class="digit">2</span><span class="count" aria-hidden="true">9</span></button>
+        <button class="digit-btn" data-digit="3" aria-pressed="false" title="Angka 3"><span class="digit">3</span><span class="count" aria-hidden="true">9</span></button>
+        <button class="digit-btn" data-digit="4" aria-pressed="false" title="Angka 4"><span class="digit">4</span><span class="count" aria-hidden="true">9</span></button>
+        <button class="digit-btn" data-digit="5" aria-pressed="false" title="Angka 5"><span class="digit">5</span><span class="count" aria-hidden="true">9</span></button>
+        <button class="digit-btn" data-digit="6" aria-pressed="false" title="Angka 6"><span class="digit">6</span><span class="count" aria-hidden="true">9</span></button>
+        <button class="digit-btn" data-digit="7" aria-pressed="false" title="Angka 7"><span class="digit">7</span><span class="count" aria-hidden="true">9</span></button>
+        <button class="digit-btn" data-digit="8" aria-pressed="false" title="Angka 8"><span class="digit">8</span><span class="count" aria-hidden="true">9</span></button>
+        <button class="digit-btn" data-digit="9" aria-pressed="false" title="Angka 9"><span class="digit">9</span><span class="count" aria-hidden="true">9</span></button>
 
-        <!-- Erase control -->
         <button id="erase-btn" class="erase-btn" title="Hapus isi sel" aria-label="Hapus">⌫</button>
       </div>
     </section>
 
-    <!-- Side panel: save/load + leaderboard -->
     <aside class="side-panel" aria-label="Panel">
       <button id="save-progress" type="button">Save</button>
       <button id="load-progress" type="button">Load</button>
@@ -144,25 +122,21 @@
     </aside>
   </main>
 
-  <!-- No-JS fallback message -->
   <noscript>
     <div class="noscript-warning" role="alert">
       JavaScript diperlukan untuk menjalankan game Sudoku. Aktifkan JavaScript lalu muat ulang halaman.
     </div>
   </noscript>
 
-  <!--
-    Catatan developer (komentar, tidak tampil):
-    - Simpan styling di file terpisah: style.css
-    - Simpan logic di file terpisah: script.js
-    - script.js diharapkan:
-        * merender 81 .cell-wrapper di #sudoku-board (atau clone #cell-template)
-        * menambahkan input .cell di setiap wrapper (readonly attribute boleh dipertahankan)
-        * menambahkan event listener untuk klik pada .digit-btn untuk mengisi angka
-        * mengupdate .digit-btn .count sesuai jumlah digit yang tersisa
-        * melakukan auto-check setelah pengisian (karena tombol Check disembunyikan)
-    - Jika mau, aku bisa kirim style.css atau script.js berikutnya.
-  -->
-
+  <!-- Service Worker registration (di-load terakhir) -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js')
+          .then(reg => console.log('SW registered:', reg.scope))
+          .catch(err => console.warn('SW registration failed:', err));
+      });
+    }
+  </script>
 </body>
 </html>
