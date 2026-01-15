@@ -2,12 +2,64 @@
 // Clean, flat Sudoku board with pure black grid lines, thick separators for 3x3,
 // no outer border, zero spacing between cells, two-row number input, large borderless digits,
 // controls: New game + difficulty (E/M/H) placed top-right above the board, Clear + Undo + Mistakes in footer.
+// Added: lightweight sound effects (no external assets) using SystemSound.
 
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'sudoku_vm.dart';
+
+/// Simple sound service using built-in SystemSound (no external assets).
+/// Provides sequences to represent different events (tap, correct, wrong, complete, new).
+class SoundService {
+  static bool enabled = true;
+
+  static void _playClick() {
+    if (!enabled) return;
+    SystemSound.play(SystemSoundType.click);
+  }
+
+  // Play a sequence of clicks with given gaps (ms). Non-blocking.
+  static Future<void> _playSequence(List<int> gapsMs) async {
+    if (!enabled) return;
+    for (int i = 0; i < gapsMs.length; i++) {
+      _playClick();
+      await Future.delayed(Duration(milliseconds: gapsMs[i]));
+    }
+  }
+
+  // Public helpers
+  static void playTap() {
+    // single short click
+    _playClick();
+  }
+
+  static void playCorrect() {
+    // pleasant two-click burst + light haptic
+    _playSequence([140]);
+    HapticFeedback.lightImpact();
+  }
+
+  static void playWrong() {
+    // three quick clicks + heavier haptic
+    _playSequence([90, 90]);
+    HapticFeedback.vibrate();
+  }
+
+  static void playComplete() {
+    // celebratory four clicks with gaps
+    _playSequence([100, 120, 140]);
+    HapticFeedback.heavyImpact();
+  }
+
+  static void playNew() {
+    // short pattern for new game
+    _playSequence([90, 90]);
+    HapticFeedback.selectionClick();
+  }
+}
 
 class SudokuView extends StatefulWidget {
   const SudokuView({super.key});
@@ -35,11 +87,15 @@ class _SudokuViewState extends State<SudokuView> {
                 _TopControls(
                   difficulty: _difficulty,
                   onDifficultyChanged: (d) {
+                    // play small feedback, change difficulty and immediately start new game
+                    SoundService.playTap();
                     setState(() => _difficulty = d);
-                    // start a new game with chosen difficulty immediately
                     vm.restart(difficulty: d);
                   },
-                  onNewPressed: () => vm.restart(difficulty: _difficulty),
+                  onNewPressed: () {
+                    SoundService.playNew();
+                    vm.restart(difficulty: _difficulty);
+                  },
                 ),
 
                 const SizedBox(height: 8),
@@ -231,6 +287,18 @@ class _ClassicBoardState extends State<_ClassicBoard> with TickerProviderStateMi
         (!colCompleteBefore && colCompleteNow) ||
         (!boxCompleteBefore && boxCompleteNow)) {
       _completePulseCtrl.forward(from: 0.0);
+      SoundService.playComplete();
+    }
+
+    // detect wrong placement (mistake increment) BEFORE updating prev snapshot
+    if (widget.vm.mistakes > _prevMistakes) {
+      SoundService.playWrong();
+    } else if (changedR != null && changedC != null) {
+      // if placed and mistakes didn't increase, it's correct
+      final wasCorrect = widget.vm.mistakes == _prevMistakes && currVal != 0;
+      if (wasCorrect) {
+        SoundService.playCorrect();
+      }
     }
 
     if (changedR != null && changedC != null) {
@@ -328,8 +396,12 @@ class _ClassicBoardState extends State<_ClassicBoard> with TickerProviderStateMi
                         width: cellSize,
                         height: cellSize,
                         child: GestureDetector(
-                          onTap: () => widget.vm.selectCell(r, c),
+                          onTap: () {
+                            SoundService.playTap();
+                            widget.vm.selectCell(r, c);
+                          },
                           onLongPress: () {
+                            SoundService.playTap();
                             if (!fixed) widget.vm.clearCell(r, c);
                           },
                           child: Container(
@@ -504,6 +576,7 @@ class _TinyFooter extends StatelessWidget {
           // Clear selected
           IconButton(
             onPressed: () {
+              SoundService.playTap();
               final r = vm.selectedRow;
               final c = vm.selectedCol;
               if (r != null && c != null) vm.clearCell(r, c);
@@ -515,7 +588,12 @@ class _TinyFooter extends StatelessWidget {
           const SizedBox(width: 6),
           // Undo
           IconButton(
-            onPressed: vm.canUndo ? vm.undo : null,
+            onPressed: vm.canUndo
+                ? () {
+                    SoundService.playTap();
+                    vm.undo();
+                  }
+                : null,
             icon: const Icon(Icons.undo),
             tooltip: 'Undo',
             splashRadius: 18,
@@ -583,11 +661,13 @@ class _NumberInputRow extends StatelessWidget {
               borderRadius: BorderRadius.circular(6),
               onTap: (enabled && selectedRow != null && selectedCol != null)
                   ? () {
+                      SoundService.playTap();
                       vm.setNumber(selectedRow!, selectedCol!, n);
                     }
                   : null,
               onLongPress: (enabled && selectedRow != null && selectedCol != null)
                   ? () {
+                      SoundService.playTap();
                       if (vm.fixed[selectedRow!][selectedCol!]) return;
                       vm.toggleCandidate(selectedRow!, selectedCol!, n);
                     }
