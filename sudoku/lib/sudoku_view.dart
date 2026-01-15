@@ -1,8 +1,7 @@
 // lib/sudoku_view.dart
 // Clean, flat Sudoku board with pure black grid lines, thick separators for 3x3,
 // no outer border, zero spacing between cells, two-row number input, large borderless digits,
-// Clear control (replaces Undo), Note toggle, and mistakes display.
-// Board visuals/animations unchanged from previous working version.
+// controls: New game + difficulty (E/M/H) placed top-right above the board, Clear + Undo + Mistakes in footer.
 
 import 'dart:async';
 import 'dart:math';
@@ -10,8 +9,16 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'sudoku_vm.dart';
 
-class SudokuView extends StatelessWidget {
+class SudokuView extends StatefulWidget {
   const SudokuView({super.key});
+
+  @override
+  State<SudokuView> createState() => _SudokuViewState();
+}
+
+class _SudokuViewState extends State<SudokuView> {
+  // keep selected difficulty in UI state so "New Game" uses last choice
+  SudokuDifficulty _difficulty = SudokuDifficulty.medium;
 
   @override
   Widget build(BuildContext context) {
@@ -23,6 +30,21 @@ class SudokuView extends StatelessWidget {
             padding: const EdgeInsets.all(12),
             child: Column(
               children: [
+                // Top controls row: placed above the board, aligned to the right.
+                // Enlarged: refresh icon + difficulty chips (E/M/H).
+                _TopControls(
+                  difficulty: _difficulty,
+                  onDifficultyChanged: (d) {
+                    setState(() => _difficulty = d);
+                    // start a new game with chosen difficulty immediately
+                    vm.restart(difficulty: d);
+                  },
+                  onNewPressed: () => vm.restart(difficulty: _difficulty),
+                ),
+
+                const SizedBox(height: 8),
+
+                // Board area (expanded)
                 Expanded(
                   child: Center(
                     child: LayoutBuilder(builder: (context, constraints) {
@@ -36,7 +58,7 @@ class SudokuView extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 10),
-                // Footer: Clear + Note + Mistakes
+                // Footer: Clear + Undo + Mistakes (compact)
                 _TinyFooter(vm: vm),
                 const SizedBox(height: 8),
                 // Two-row number input (large, borderless digits)
@@ -47,6 +69,82 @@ class SudokuView extends StatelessWidget {
         ),
       );
     });
+  }
+}
+
+// -------------------------
+// Top controls widget (bigger & right-aligned)
+// -------------------------
+class _TopControls extends StatelessWidget {
+  final SudokuDifficulty difficulty;
+  final ValueChanged<SudokuDifficulty> onDifficultyChanged;
+  final VoidCallback onNewPressed;
+
+  const _TopControls({
+    required this.difficulty,
+    required this.onDifficultyChanged,
+    required this.onNewPressed,
+  });
+
+  Widget _diffChip(String label, SudokuDifficulty d, bool selected, ValueChanged<SudokuDifficulty> onTap) {
+    return InkWell(
+      onTap: () => onTap(d),
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        width: 42,
+        height: 34,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected ? Colors.black : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w900,
+            color: selected ? Colors.white : Colors.black,
+            height: 1.0,
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Align to the right, larger controls
+    return SizedBox(
+      height: 44,
+      child: Row(
+        children: [
+          const Spacer(),
+          // New game button (larger icon)
+          SizedBox(
+            width: 46,
+            height: 36,
+            child: Material(
+              color: Colors.transparent,
+              child: IconButton(
+                padding: EdgeInsets.zero,
+                iconSize: 24,
+                splashRadius: 22,
+                onPressed: onNewPressed,
+                icon: const Icon(Icons.refresh),
+                tooltip: 'New',
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Difficulty chips (E / M / H) — made larger and easier to tap
+          _diffChip('E', SudokuDifficulty.easy, difficulty == SudokuDifficulty.easy, onDifficultyChanged),
+          const SizedBox(width: 8),
+          _diffChip('M', SudokuDifficulty.medium, difficulty == SudokuDifficulty.medium, onDifficultyChanged),
+          const SizedBox(width: 8),
+          _diffChip('H', SudokuDifficulty.hard, difficulty == SudokuDifficulty.hard, onDifficultyChanged),
+        ],
+      ),
+    );
   }
 }
 
@@ -388,10 +486,8 @@ class _HighlightGridPainter extends CustomPainter {
 }
 
 // -------------------------
-// Footer: Clear (replaces Undo) + Note toggle + Mistakes display
-// -------------------------
-// -------------------------
-// Footer: Clear (left) + Undo (middle) + Mistakes (right)
+// Footer: Clear + Undo + Mistakes
+// compact and minimal
 // -------------------------
 class _TinyFooter extends StatelessWidget {
   final SudokuViewModel vm;
@@ -399,13 +495,13 @@ class _TinyFooter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // layout: [ left spacer ] [ Clear ] [ small gap ] [ Undo ] [ Spacer ] [ Mistakes ]
+    // layout: [left small padding] [Clear] [small gap] [Undo] [spacer] [mistakes]
     return SizedBox(
       height: 44,
       child: Row(
         children: [
-          const SizedBox(width: 12),
-          // Clear (replaces previous undo)
+          const SizedBox(width: 6),
+          // Clear selected
           IconButton(
             onPressed: () {
               final r = vm.selectedRow;
@@ -413,11 +509,11 @@ class _TinyFooter extends StatelessWidget {
               if (r != null && c != null) vm.clearCell(r, c);
             },
             icon: const Icon(Icons.backspace_outlined),
-            tooltip: 'Clear selected',
+            tooltip: 'Clear',
             splashRadius: 18,
           ),
           const SizedBox(width: 6),
-          // UNDO (replaces pencil)
+          // Undo
           IconButton(
             onPressed: vm.canUndo ? vm.undo : null,
             icon: const Icon(Icons.undo),
@@ -425,12 +521,12 @@ class _TinyFooter extends StatelessWidget {
             splashRadius: 18,
           ),
           const Spacer(),
-          // Mistakes display
+          // Mistakes (single number, minimal)
           Padding(
-            padding: const EdgeInsets.only(right: 12.0),
+            padding: const EdgeInsets.only(right: 8.0),
             child: Text(
-              'Mistakes: ${vm.mistakes}',
-              style: const TextStyle(fontSize: 14, color: Colors.black87, fontWeight: FontWeight.w600),
+              '${vm.mistakes}',
+              style: const TextStyle(fontSize: 14, color: Colors.black87, fontWeight: FontWeight.w700),
             ),
           ),
         ],
