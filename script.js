@@ -1,33 +1,58 @@
 /* script.js
-   Renders 9x9 board, grid lines, selection overlays, cell pulses,
-   connects digit bank to setNumber, implements undo/clear/candidates.
+   Sudoku UI glue:
+   - renders 9x9 board
+   - draws grid-lines into #grid-lines (creates placeholder if missing)
+   - selection overlays (row/col/box)
+   - cell pulse animation on correct input, conflict highlight on wrong
+   - digit bank click & long-press (notes)
+   - Clear / Undo / Erase
+   Primary input method: digit bank. Keyboard input intentionally minimal/disabled.
 */
 
 (() => {
-  // --- Config ---
+  // config
   const LONG_PRESS_MS = 450;
   const REMOVALS = { easy: 36, medium: 44, hard: 52 };
 
-  // --- State ---
-  let solution = null; // 9x9 full solution
-  let board = null; // 9x9 current (0 = empty)
-  let fixed = null; // 9x9 booleans
-  let candidates = null; // 9x9 Set<int>
+  // state
+  let solution = null;
+  let board = null;
+  let fixed = null;
+  let candidates = null;
   let selected = { r: null, c: null };
+  let lastSelected = { r: null, c: null }; // fallback for digit clicks
   let mistakes = 0;
   let undoStack = [];
 
-  // Cached DOM
+  // cached dom (create placeholders if missing)
   const boardEl = document.getElementById('sudoku-board');
-  const gridLinesEl = document.getElementById('grid-lines');
-  const overlayRow = document.getElementById('overlay-row');
-  const overlayCol = document.getElementById('overlay-col');
-  const overlayBox = document.getElementById('overlay-box');
+  if (!boardEl) throw new Error('#sudoku-board element required in HTML');
+
+  // ensure overlay placeholders exist (some templates include them already)
+  function ensureEl(id, cls) {
+    let el = document.getElementById(id);
+    if (!el) {
+      el = document.createElement('div');
+      el.id = id;
+      if (cls) el.className = cls;
+      boardEl.appendChild(el);
+    }
+    return el;
+  }
+
+  const gridLinesEl = ensureEl('grid-lines', 'grid-lines');
+  const overlayRow = ensureEl('overlay-row', 'overlay-highlight row');
+  const overlayCol = ensureEl('overlay-col', 'overlay-highlight col');
+  const overlayBox = ensureEl('overlay-box', 'overlay-highlight box');
+
   const template = document.getElementById('cell-template');
+  if (!template) throw new Error('#cell-template missing');
+
   const timerEl = document.getElementById('timer');
   const mistakesEl = document.getElementById('mistakes');
   const mistakesMini = document.getElementById('mistakes-mini');
-  const digitBtns = Array.from(document.querySelectorAll('.digit-btn'));
+
+  let digitBtns = Array.from(document.querySelectorAll('.digit-btn'));
   const eraseBtn = document.getElementById('erase-btn');
   const clearBtn = document.getElementById('clear-btn');
   const undoBtn = document.getElementById('undo-btn');
@@ -35,17 +60,14 @@
   const diffE = document.getElementById('diff-e');
   const diffM = document.getElementById('diff-m');
   const diffH = document.getElementById('diff-h');
-  const cellNodes = []; // 9x9 DOM wrappers cached after render
 
-  // --- Utilities ---
+  const cellNodes = []; // 9x9 wrappers
+
+  // helpers
   function makeEmptyGrid(v = 0) {
     return Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => v));
   }
-  function deepCopyGrid(g) {
-    return g.map(row => row.slice());
-  }
-
-  // Random shuffle helper
+  function deepCopyGrid(g) { return g.map(row => row.slice()); }
   function shuffle(arr) {
     for (let i = arr.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
@@ -54,29 +76,21 @@
     return arr;
   }
 
-  // --- Sudoku generator (backtracking) ---
+  // sudoku generator (simple backtracking)
   function createSolvedGrid() {
     const g = makeEmptyGrid(0);
-
     function canPlace(r, c, n) {
       for (let i = 0; i < 9; i++) {
         if (g[r][i] === n) return false;
         if (g[i][c] === n) return false;
       }
-      const br = Math.floor(r / 3) * 3;
-      const bc = Math.floor(c / 3) * 3;
-      for (let rr = br; rr < br + 3; rr++) {
-        for (let cc = bc; cc < bc + 3; cc++) {
-          if (g[rr][cc] === n) return false;
-        }
-      }
+      const br = Math.floor(r / 3) * 3, bc = Math.floor(c / 3) * 3;
+      for (let rr = br; rr < br + 3; rr++) for (let cc = bc; cc < bc + 3; cc++) if (g[rr][cc] === n) return false;
       return true;
     }
-
     function fillCell(pos = 0) {
       if (pos === 81) return true;
-      const r = Math.floor(pos / 9);
-      const c = pos % 9;
+      const r = Math.floor(pos / 9), c = pos % 9;
       const nums = shuffle([1,2,3,4,5,6,7,8,9].slice());
       for (const n of nums) {
         if (canPlace(r, c, n)) {
@@ -87,42 +101,36 @@
       }
       return false;
     }
-
-    const ok = fillCell(0);
-    if (!ok) throw new Error('Failed to generate solution');
+    if (!fillCell(0)) throw new Error('generator failed');
     return g;
   }
 
-  // Remove cells (random) - no uniqueness checking (fast)
-  function removeCells(grid, removals) {
-    const g = deepCopyGrid(grid);
-    const indices = shuffle(Array.from({ length: 81 }, (_, i) => i));
+  function removeCells(g, removals) {
+    const out = deepCopyGrid(g);
+    const idx = shuffle(Array.from({ length: 81 }, (_, i) => i));
     let removed = 0;
-    for (const idx of indices) {
+    for (const k of idx) {
       if (removed >= removals) break;
-      const r = Math.floor(idx / 9);
-      const c = idx % 9;
-      if (g[r][c] !== 0) {
-        g[r][c] = 0;
-        removed++;
-      }
+      const r = Math.floor(k / 9), c = k % 9;
+      if (out[r][c] !== 0) { out[r][c] = 0; removed++; }
     }
-    return g;
+    return out;
   }
 
-  // --- Model operations ---
+  // model ops
   function restart(difficulty = 'medium') {
     solution = createSolvedGrid();
     board = deepCopyGrid(solution);
-    const removals = REMOVALS[difficulty] ?? REMOVALS.medium;
-    board = removeCells(board, removals);
+    const rem = REMOVALS[difficulty] ?? REMOVALS.medium;
+    board = removeCells(board, rem);
     fixed = board.map(r => r.map(v => v !== 0));
     candidates = Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => new Set()));
     selected = { r: null, c: null };
+    lastSelected = { r: null, c: null };
     mistakes = 0;
     undoStack = [];
     renderBoard();
-    installGridLines(); // align lines after render
+    installGridLines();
     updateAllCounts();
     updateMistakes();
     updateUndoButton();
@@ -147,86 +155,61 @@
     candidates = s.candidates;
     mistakes = s.mistakes;
     selected = s.selected;
-    renderBoard(); // full rerender
+    lastSelected = selected ? { ...selected } : { r: null, c: null };
+    renderBoard();
     updateAllCounts();
     updateMistakes();
     updateUndoButton();
     positionOverlays();
   }
 
-  function setNumber(r, c, value, isNote = false) {
-    if (!inBounds(r, c)) return;
+  function setNumber(r, c, val, isNote = false) {
+    if (!inBounds(r,c)) return;
     if (fixed[r][c]) return;
-
     if (isNote) {
       pushUndo();
       const set = candidates[r][c];
-      if (set.has(value)) set.delete(value);
-      else set.add(value);
-      renderCell(r, c);
+      if (set.has(val)) set.delete(val); else set.add(val);
+      renderCell(r,c);
       return;
     }
-
     pushUndo();
-    board[r][c] = value;
+    board[r][c] = val;
     candidates[r][c].clear();
-
-    // mistakes compare with solution
-    if (solution && solution[r][c] !== value) {
-      mistakes++;
-      // wrong feedback
-      animateWrongCell(r, c);
-    } else {
-      // correct feedback
-      animateCorrectCell(r, c);
-    }
-
-    renderCell(r, c);
+    if (solution && solution[r][c] !== val) { mistakes++; animateWrongCell(r,c); }
+    else animateCorrectCell(r,c);
+    renderCell(r,c);
     renderConflicts();
     updateAllCounts();
     updateMistakes();
-
-    // completion check for row/col/box containing the cell
-    if (isRowComplete(r)) {
-      pulseOverlay('row', r);
-    }
-    if (isColComplete(c)) {
-      pulseOverlay('col', c);
-    }
-    if (isBoxCompleteForCell(r, c)) {
-      pulseOverlay('box', r, c);
-    }
+    if (isRowComplete(r)) pulseOverlay('row', r);
+    if (isColComplete(c)) pulseOverlay('col', c);
+    if (isBoxCompleteForCell(r,c)) pulseOverlay('box', r, c);
   }
 
-  function clearCell(r, c) {
-    if (!inBounds(r, c)) return;
+  function clearCell(r,c) {
+    if (!inBounds(r,c)) return;
     if (fixed[r][c]) return;
     pushUndo();
     board[r][c] = 0;
     candidates[r][c].clear();
-    renderCell(r, c);
+    renderCell(r,c);
     renderConflicts();
     updateAllCounts();
     positionOverlays();
   }
 
-  function inBounds(r, c) {
-    return r >= 0 && r < 9 && c >= 0 && c < 9;
-  }
+  function inBounds(r,c) { return r>=0 && r<9 && c>=0 && c<9; }
 
-  // --- Rendering ---
+  // render
   function renderBoard() {
-    // Clear board children except overlays placeholders
-    // We'll reconstruct cells and keep overlay placeholders (#grid-lines, overlays)
-    // Remove all children then recreate overlays then cells to ensure ordering
+    // clear except overlays (we'll re-append placeholders to keep order)
     boardEl.innerHTML = '';
-    // recreate overlay placeholders
     boardEl.appendChild(gridLinesEl);
     boardEl.appendChild(overlayRow);
     boardEl.appendChild(overlayCol);
     boardEl.appendChild(overlayBox);
 
-    // build cells
     for (let r = 0; r < 9; r++) {
       cellNodes[r] = [];
       for (let c = 0; c < 9; c++) {
@@ -238,26 +221,18 @@
         const input = wrapper.querySelector('.cell');
         const notesEl = wrapper.querySelector('.notes');
 
-        // set initial value
         const v = board[r][c];
         input.value = v === 0 ? '' : String(v);
-        if (fixed[r][c]) {
-          input.classList.add('fixed');
-        } else {
-          input.classList.remove('fixed');
-        }
+        if (fixed[r][c]) input.classList.add('fixed'); else input.classList.remove('fixed');
 
-        // apply candidate notes if any
         const set = candidates[r][c];
         for (let n = 1; n <= 9; n++) {
           const noteEl = notesEl.querySelector(`.note[data-n="${n}"]`);
-          noteEl.textContent = set.has(n) ? String(n) : '';
+          if (noteEl) noteEl.textContent = set.has(n) ? String(n) : '';
         }
 
-        // add event handlers on wrapper (for selection and long press)
         attachCellEvents(wrapper, r, c);
-
-        // append to board
+        wrapper.tabIndex = 0;
         boardEl.appendChild(wrapper);
         cellNodes[r][c] = wrapper;
       }
@@ -267,164 +242,125 @@
     positionOverlays();
   }
 
-  function renderCell(r, c) {
-    const wrapper = cellNodes[r][c];
+  function renderCell(r,c) {
+    const wrapper = cellNodes[r] && cellNodes[r][c];
     if (!wrapper) return;
     const input = wrapper.querySelector('.cell');
     const notesEl = wrapper.querySelector('.notes');
     const v = board[r][c];
     input.value = v === 0 ? '' : String(v);
-    if (fixed[r][c]) input.classList.add('fixed');
-    else input.classList.remove('fixed');
+    if (fixed[r][c]) input.classList.add('fixed'); else input.classList.remove('fixed');
 
-    // candidates
     const set = candidates[r][c];
     for (let n = 1; n <= 9; n++) {
       const noteEl = notesEl.querySelector(`.note[data-n="${n}"]`);
-      noteEl.textContent = set.has(n) ? String(n) : '';
+      if (noteEl) noteEl.textContent = set.has(n) ? String(n) : '';
     }
   }
 
-  // Conflicts: mark any cell that duplicates a value in its row/col/box
   function renderConflicts() {
-    // clear all
-    for (let r = 0; r < 9; r++) {
-      for (let c = 0; c < 9; c++) {
-        cellNodes[r][c].classList.remove('has-conflict');
-      }
+    for (let r=0;r<9;r++) for (let c=0;c<9;c++) {
+      const node = (cellNodes[r] && cellNodes[r][c]);
+      if (node) node.classList.remove('has-conflict');
     }
-
-    for (let r = 0; r < 9; r++) {
-      for (let c = 0; c < 9; c++) {
-        const v = board[r][c];
-        if (v === 0) continue;
-        // row/col/box check
-        for (let cc = 0; cc < 9; cc++) {
-          if (cc !== c && board[r][cc] === v) {
-            cellNodes[r][c].classList.add('has-conflict');
-            cellNodes[r][cc].classList.add('has-conflict');
-          }
-        }
-        for (let rr = 0; rr < 9; rr++) {
-          if (rr !== r && board[rr][c] === v) {
-            cellNodes[r][c].classList.add('has-conflict');
-            cellNodes[rr][c].classList.add('has-conflict');
-          }
-        }
-        const br = Math.floor(r/3)*3;
-        const bc = Math.floor(c/3)*3;
-        for (let rr = br; rr < br+3; rr++) {
-          for (let cc = bc; cc < bc+3; cc++) {
-            if ((rr !== r || cc !== c) && board[rr][cc] === v) {
-              cellNodes[r][c].classList.add('has-conflict');
-              cellNodes[rr][cc].classList.add('has-conflict');
-            }
-          }
+    for (let r=0;r<9;r++) for (let c=0;c<9;c++) {
+      const v = board[r][c];
+      if (v === 0) continue;
+      for (let cc=0; cc<9; cc++) if (cc !== c && board[r][cc] === v) {
+        cellNodes[r][c].classList.add('has-conflict');
+        cellNodes[r][cc].classList.add('has-conflict');
+      }
+      for (let rr=0; rr<9; rr++) if (rr !== r && board[rr][c] === v) {
+        cellNodes[r][c].classList.add('has-conflict');
+        cellNodes[rr][c].classList.add('has-conflict');
+      }
+      const br = Math.floor(r/3)*3, bc = Math.floor(c/3)*3;
+      for (let rr = br; rr < br+3; rr++) for (let cc = bc; cc < bc+3; cc++) {
+        if ((rr !== r || cc !== c) && board[rr][cc] === v) {
+          cellNodes[r][c].classList.add('has-conflict');
+          cellNodes[rr][cc].classList.add('has-conflict');
         }
       }
     }
   }
 
-  // --- Grid lines (8 vertical + 8 horizontal), drawn into #grid-lines ---
-// REPLACE your old installGridLines() with this improved version
-function installGridLines() {
-  // clear existing
-  gridLinesEl.innerHTML = '';
-
-  // Board size (use clientWidth/clientHeight to avoid transform/viewport offsets)
-  const w = boardEl.clientWidth;
-  const h = boardEl.clientHeight;
-
-  const thinPx = 1;   // thin line width in px
-  const thickPx = 3;  // thick separator width in px
-
-  // vertical lines: i = 1..8
-  for (let i = 1; i <= 8; i++) {
-    const isThick = (i % 3 === 0);
-    const widthPx = isThick ? thickPx : thinPx;
-
-    const line = document.createElement('div');
-    line.className = 'grid-line vertical' + (isThick ? ' thick' : '');
-    // Position with percentage + calc to avoid rounding drift:
-    // left = calc(i*100/9% - widthPx/2)
-    line.style.left = `calc(${(i * 100 / 9).toFixed(6)}% - ${Math.round(widthPx/2)}px)`;
-    line.style.width = `${widthPx}px`;
-    line.style.top = '0';
-    line.style.height = '100%';
-    gridLinesEl.appendChild(line);
+  // gridlines (percentage positioning to avoid subpixel drift)
+  function installGridLines() {
+    gridLinesEl.innerHTML = '';
+    const thin = 1, thick = 3;
+    for (let i=1;i<=8;i++) {
+      const isThick = (i%3===0);
+      const w = isThick ? thick : thin;
+      const v = document.createElement('div');
+      v.className = 'grid-line vertical' + (isThick ? ' thick' : '');
+      v.style.left = `calc(${(i*100/9).toFixed(6)}% - ${Math.round(w/2)}px)`;
+      v.style.width = `${w}px`; v.style.top = '0'; v.style.height = '100%';
+      gridLinesEl.appendChild(v);
+    }
+    for (let i=1;i<=8;i++) {
+      const isThick = (i%3===0);
+      const h = isThick ? thick : thin;
+      const v = document.createElement('div');
+      v.className = 'grid-line horizontal' + (isThick ? ' thick' : '');
+      v.style.top = `calc(${(i*100/9).toFixed(6)}% - ${Math.round(h/2)}px)`;
+      v.style.height = `${h}px`; v.style.left = '0'; v.style.width = '100%';
+      gridLinesEl.appendChild(v);
+    }
+    gridLinesEl.style.position = 'absolute';
+    gridLinesEl.style.inset = '0';
+    gridLinesEl.style.pointerEvents = 'none';
+    gridLinesEl.style.zIndex = '40';
   }
 
-  // horizontal lines: i = 1..8
-  for (let i = 1; i <= 8; i++) {
-    const isThick = (i % 3 === 0);
-    const heightPx = isThick ? thickPx : thinPx;
-
-    const line = document.createElement('div');
-    line.className = 'grid-line horizontal' + (isThick ? ' thick' : '');
-    // top = calc(i*100/9% - heightPx/2)
-    line.style.top = `calc(${(i * 100 / 9).toFixed(6)}% - ${Math.round(heightPx/2)}px)`;
-    line.style.height = `${heightPx}px`;
-    line.style.left = '0';
-    line.style.width = '100%';
-    gridLinesEl.appendChild(line);
-  }
-
-  // Make sure overlays are above board cells
-  gridLinesEl.style.position = 'absolute';
-  gridLinesEl.style.inset = '0';
-  gridLinesEl.style.pointerEvents = 'none';
-}
-
-
-  // --- Selection & overlays ---
+  // selection & overlays
   function attachCellEvents(wrapper, r, c) {
-    // click selects cell
     wrapper.addEventListener('click', (e) => {
       e.preventDefault();
-      selectCell(r, c);
+      selectCell(r,c);
     });
-
-    // longpress to clear cell (like Flutter long press)
+    wrapper.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        selectCell(r,c);
+      }
+    });
     let longTimer = null;
-    wrapper.addEventListener('pointerdown', (ev) => {
-      // start longpress timer — clear cell if longpress
+    wrapper.addEventListener('pointerdown', () => {
       longTimer = setTimeout(() => {
-        if (!fixed[r][c]) {
-          clearCell(r, c);
-        }
+        if (!fixed[r][c]) clearCell(r,c);
       }, 600);
     });
-    ['pointerup', 'pointerleave', 'pointercancel'].forEach(evName => {
-      wrapper.addEventListener(evName, () => {
+    ['pointerup','pointerleave','pointercancel'].forEach(ev => {
+      wrapper.addEventListener(ev, () => {
         if (longTimer) { clearTimeout(longTimer); longTimer = null; }
       });
     });
   }
 
-  function selectCell(r, c) {
-    // toggle selection
+  function selectCell(r,c) {
     if (selected.r === r && selected.c === c) {
       selected = { r: null, c: null };
     } else {
       selected = { r, c };
+      lastSelected = { r, c };
     }
     updateSelectionUI();
     positionOverlays();
   }
 
   function updateSelectionUI() {
-    for (let rr = 0; rr < 9; rr++) {
-      for (let cc = 0; cc < 9; cc++) {
-        const wrapper = cellNodes[rr][cc];
-        if (!wrapper) continue;
-        if (selected.r === rr && selected.c === cc) wrapper.classList.add('selected');
-        else wrapper.classList.remove('selected');
-      }
+    for (let rr=0; rr<9; rr++) for (let cc=0; cc<9; cc++) {
+      const w = cellNodes[rr] && cellNodes[rr][cc];
+      if (!w) continue;
+      if (selected.r === rr && selected.c === cc) {
+        w.classList.add('selected');
+        const input = w.querySelector('.cell');
+        if (input) input.focus({ preventScroll: true });
+      } else w.classList.remove('selected');
     }
   }
 
   function positionOverlays() {
-    // Hide overlays if no selection
     if (selected.r === null || selected.c === null) {
       overlayRow.style.display = 'none';
       overlayCol.style.display = 'none';
@@ -432,26 +368,18 @@ function installGridLines() {
       return;
     }
     const rect = boardEl.getBoundingClientRect();
-    const cellW = rect.width / 9;
-    const cellH = rect.height / 9;
-
-    // row
+    const cellW = rect.width / 9, cellH = rect.height / 9;
     overlayRow.style.display = 'block';
     overlayRow.style.left = '0px';
     overlayRow.style.width = rect.width + 'px';
     overlayRow.style.top = (selected.r * cellH) + 'px';
     overlayRow.style.height = cellH + 'px';
-
-    // col
     overlayCol.style.display = 'block';
     overlayCol.style.top = '0px';
     overlayCol.style.height = rect.height + 'px';
     overlayCol.style.left = (selected.c * cellW) + 'px';
     overlayCol.style.width = cellW + 'px';
-
-    // box
-    const br = Math.floor(selected.r / 3) * 3;
-    const bc = Math.floor(selected.c / 3) * 3;
+    const br = Math.floor(selected.r/3)*3, bc = Math.floor(selected.c/3)*3;
     overlayBox.style.display = 'block';
     overlayBox.style.left = (bc * cellW) + 'px';
     overlayBox.style.top = (br * cellH) + 'px';
@@ -459,143 +387,138 @@ function installGridLines() {
     overlayBox.style.height = (3 * cellH) + 'px';
   }
 
-  // pulse overlay for completion
-  function pulseOverlay(kind, rOrC, cIfBox) {
-    let el;
-    if (kind === 'row') el = overlayRow;
-    else if (kind === 'col') el = overlayCol;
-    else el = overlayBox;
+  function pulseOverlay(kind) {
+    const el = kind === 'row' ? overlayRow : kind === 'col' ? overlayCol : overlayBox;
     if (!el) return;
     el.classList.remove('pulse');
-    // trigger reflow
     void el.offsetWidth;
     el.classList.add('pulse');
-    // remove after animation
-    setTimeout(() => el.classList.remove('pulse'), 700);
+    setTimeout(()=> el.classList.remove('pulse'), 700);
   }
 
-  // --- Animations for cells ---
-  function animateCorrectCell(r, c) {
-    const wrapper = cellNodes[r][c];
-    if (!wrapper) return;
-    const el = wrapper;
-    el.style.transition = 'transform 180ms cubic-bezier(.2,.9,.2,1)';
-    el.style.transform = 'scale(1.14)';
-    setTimeout(() => {
-      el.style.transform = 'scale(1)';
-      setTimeout(() => {
-        el.style.transition = '';
-        el.style.transform = '';
-      }, 200);
+  // animations
+  function animateCorrectCell(r,c) {
+    const w = cellNodes[r] && cellNodes[r][c]; if (!w) return;
+    w.style.transition = 'transform 180ms cubic-bezier(.2,.9,.2,1)';
+    w.style.transform = 'scale(1.14)';
+    setTimeout(()=> {
+      w.style.transform = 'scale(1)';
+      setTimeout(()=> { w.style.transition=''; w.style.transform=''; }, 200);
     }, 180);
   }
-
-  function animateWrongCell(r, c) {
-    const wrapper = cellNodes[r][c];
-    if (!wrapper) return;
-    // red flash
-    const orig = wrapper.style.background;
-    wrapper.classList.add('has-conflict');
-    setTimeout(() => {
-      // keep conflict class (still marks duplicates), but flash effect can be temporary
-      // we won't remove has-conflict here because duplicates logic will handle it
-    }, 300);
+  function animateWrongCell(r,c) {
+    const w = cellNodes[r] && cellNodes[r][c]; if (!w) return;
+    w.classList.add('has-conflict');
   }
 
-  // --- helpers for completion checks ---
-  function isRowComplete(r) {
-    if (r === null) return false;
-    for (let c = 0; c < 9; c++) if (board[r][c] === 0) return false;
-    return true;
-  }
-  function isColComplete(c) {
-    if (c === null) return false;
-    for (let r = 0; r < 9; r++) if (board[r][c] === 0) return false;
-    return true;
-  }
-  function isBoxCompleteForCell(r, c) {
+  function isRowComplete(r) { if (r === null) return false; for (let c=0;c<9;c++) if (board[r][c]===0) return false; return true; }
+  function isColComplete(c) { if (c === null) return false; for (let r=0;r<9;r++) if (board[r][c]===0) return false; return true; }
+  function isBoxCompleteForCell(r,c) {
     if (r === null || c === null) return false;
-    const br = Math.floor(r / 3) * 3;
-    const bc = Math.floor(c / 3) * 3;
-    for (let rr = br; rr < br + 3; rr++) {
-      for (let cc = bc; cc < bc + 3; cc++) {
-        if (board[rr][cc] === 0) return false;
-      }
-    }
+    const br = Math.floor(r/3)*3, bc = Math.floor(c/3)*3;
+    for (let rr=br; rr<br+3; rr++) for (let cc=bc; cc<bc+3; cc++) if (board[rr][cc]===0) return false;
     return true;
   }
 
-  // --- Digit bank handlers (tap & long press for notes) ---
+  // digit bank handlers (robust across devices)
   function attachDigitBank() {
+    digitBtns = Array.from(document.querySelectorAll('.digit-btn')); // refresh list in case DOM changed
     digitBtns.forEach(btn => {
       const n = Number(btn.dataset.digit);
       let timer = null;
-      const start = (e) => {
-        e.preventDefault();
-        timer = setTimeout(() => {
-          // long press: toggle candidate on selected
-          if (selected.r !== null && selected.c !== null) {
-            setNumber(selected.r, selected.c, n, true);
-          }
-        }, LONG_PRESS_MS);
-      };
-      const cancel = (e) => {
-        if (timer) { clearTimeout(timer); timer = null; }
-      };
-      btn.addEventListener('pointerdown', start);
-      ['pointerup','pointerleave','pointercancel'].forEach(ev => btn.addEventListener(ev, cancel));
 
+      // start long-press timer on pointerdown (do NOT preventDefault)
+      function startLong(e) {
+        // don't preventDefault: that can cancel click on some browsers
+        timer = setTimeout(() => {
+          const r = (selected.r !== null ? selected.r : lastSelected.r);
+          const c = (selected.c !== null ? selected.c : lastSelected.c);
+          if (r !== null && c !== null) setNumber(r, c, n, true);
+          else flashDigitBtn(btn);
+          timer = null;
+        }, LONG_PRESS_MS);
+      }
+      function cancelLong() { if (timer) { clearTimeout(timer); timer = null; } }
+
+      // pointer events preferred
+      if (window.PointerEvent) {
+        btn.addEventListener('pointerdown', startLong, { passive: true });
+        ['pointerup','pointerleave','pointercancel'].forEach(ev => btn.addEventListener(ev, cancelLong));
+      } else {
+        // fallback for older browsers: touch & mouse
+        btn.addEventListener('touchstart', startLong, { passive: true });
+        btn.addEventListener('mousedown', startLong);
+        ['touchend','touchcancel','mouseleave','mouseup'].forEach(ev => btn.addEventListener(ev, cancelLong));
+      }
+
+      // click for normal tap -> set number
       btn.addEventListener('click', (e) => {
         e.preventDefault();
-        // click: set number if selection exists
-        if (selected.r !== null && selected.c !== null) {
-          setNumber(selected.r, selected.c, n, false);
-        }
+        cancelLong();
+        const r = (selected.r !== null ? selected.r : lastSelected.r);
+        const c = (selected.c !== null ? selected.c : lastSelected.c);
+        if (r !== null && c !== null) setNumber(r, c, n, false);
+        else flashBoard();
       });
     });
 
-    // erase button behaves like Clear: clear selected cell
-    eraseBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      if (selected.r !== null && selected.c !== null) clearCell(selected.r, selected.c);
-    });
+    // erase behaviour
+    if (eraseBtn) {
+      eraseBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const r = (selected.r !== null ? selected.r : lastSelected.r);
+        const c = (selected.c !== null ? selected.c : lastSelected.c);
+        if (r !== null && c !== null) clearCell(r, c);
+        else flashBoard();
+      });
+    }
   }
 
-  // --- footer buttons ---
-  clearBtn.addEventListener('click', (e) => {
-    e.preventDefault();
-    if (selected.r !== null && selected.c !== null) clearCell(selected.r, selected.c);
-  });
+  function flashDigitBtn(btn) {
+    btn.style.transform = 'scale(0.96)';
+    setTimeout(()=> btn.style.transform = '', 160);
+  }
+  function flashBoard() {
+    boardEl.style.transition = 'transform 90ms ease';
+    boardEl.style.transform = 'translateY(-4px)';
+    setTimeout(()=> { boardEl.style.transform = ''; setTimeout(()=> boardEl.style.transition = '', 200); }, 90);
+  }
 
-  undoBtn.addEventListener('click', (e) => {
+  // footer controls
+  if (clearBtn) clearBtn.addEventListener('click', (e) => {
     e.preventDefault();
-    undo();
+    const r = (selected.r !== null ? selected.r : lastSelected.r);
+    const c = (selected.c !== null ? selected.c : lastSelected.c);
+    if (r !== null && c !== null) clearCell(r,c);
+    else flashBoard();
   });
+  if (undoBtn) undoBtn.addEventListener('click', (e) => { e.preventDefault(); undo(); });
 
-  // New game & difficulty chips
-  newBtn.addEventListener('click', () => {
-    // difficulty from selected chip
-    const diff = diffE.classList.contains('selected') ? 'easy' : diffH.classList.contains('selected') ? 'hard' : 'medium';
+  if (newBtn) newBtn.addEventListener('click', () => {
+    const diff = diffE && diffE.classList.contains('selected') ? 'easy'
+               : diffH && diffH.classList.contains('selected') ? 'hard'
+               : 'medium';
     restart(diff);
   });
   function setDifficultyChip(el) {
+    if (!diffE || !diffM || !diffH) return;
     diffE.classList.remove('selected'); diffE.setAttribute('aria-pressed','false');
     diffM.classList.remove('selected'); diffM.setAttribute('aria-pressed','false');
     diffH.classList.remove('selected'); diffH.setAttribute('aria-pressed','false');
     el.classList.add('selected'); el.setAttribute('aria-pressed','true');
   }
-  diffE.addEventListener('click', () => { setDifficultyChip(diffE); restart('easy'); });
-  diffM.addEventListener('click', () => { setDifficultyChip(diffM); restart('medium'); });
-  diffH.addEventListener('click', () => { setDifficultyChip(diffH); restart('hard'); });
+  if (diffE) diffE.addEventListener('click', () => { setDifficultyChip(diffE); restart('easy'); });
+  if (diffM) diffM.addEventListener('click', () => { setDifficultyChip(diffM); restart('medium'); });
+  if (diffH) diffH.addEventListener('click', () => { setDifficultyChip(diffH); restart('hard'); });
 
-  // --- counts & UI update helpers ---
+  // ui helpers
   function updateAllCounts() {
-    // compute remaining per number (9 - occurrences)
     const counts = Array(9).fill(0);
-    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) {
+    for (let r=0;r<9;r++) for (let c=0;c<9;c++) {
       const v = board[r][c];
-      if (v >= 1 && v <= 9) counts[v-1]++;
+      if (v>=1 && v<=9) counts[v-1]++;
     }
+    digitBtns = Array.from(document.querySelectorAll('.digit-btn'));
     digitBtns.forEach(btn => {
       const n = Number(btn.dataset.digit);
       const countEl = btn.querySelector('.count');
@@ -605,52 +528,34 @@ function installGridLines() {
   }
 
   function updateMistakes() {
-    mistakesEl.textContent = String(mistakes);
-    mistakesMini.textContent = String(mistakes);
+    if (mistakesEl) mistakesEl.textContent = String(mistakes);
+    if (mistakesMini) mistakesMini.textContent = String(mistakes);
   }
 
   function updateUndoButton() {
-    if (undoStack.length) undoBtn.removeAttribute('disabled');
-    else undoBtn.setAttribute('disabled', 'true');
+    if (!undoBtn) return;
+    if (undoStack.length) undoBtn.removeAttribute('disabled'); else undoBtn.setAttribute('disabled', 'true');
   }
 
-  // Set up keyboard input for convenience (1-9 keys to set, Backspace to clear)
-  window.addEventListener('keydown', (e) => {
-    if (!selected.r && selected.r !== 0) return;
-    if (e.key >= '1' && e.key <= '9') {
-      setNumber(selected.r, selected.c, Number(e.key));
-    } else if (e.key === 'Backspace' || e.key === 'Delete') {
-      clearCell(selected.r, selected.c);
-    } else if (e.key === 'Escape') {
-      selected = { r: null, c: null };
-      updateSelectionUI();
-      positionOverlays();
-    }
-  });
+  // keyboard input intentionally DE-prioritized: digit bank is primary method.
+  // (If you later want keyboard too, we can re-enable.)
 
-  // --- initialization ---
+  // init
   function init() {
-    // create initial puzzle (default medium)
     restart('medium');
     attachDigitBank();
-    // ensure grid lines update on resize
+    // recompute lines & overlays on resize
     let t;
     window.addEventListener('resize', () => {
       clearTimeout(t);
-      t = setTimeout(() => {
-        installGridLines();
-        positionOverlays();
-      }, 120);
+      t = setTimeout(() => { installGridLines(); positionOverlays(); }, 120);
     });
   }
 
-  // expose restart to window for dev debugging
+  // expose restart for debugging
   window.sudokuRestart = restart;
 
-  // start after DOM ready
-  if (document.readyState === 'loading') {
-    window.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
-  }
-})();
+  if (document.readyState === 'loading') window.addEventListener('DOMContentLoaded', init);
+  else init();
+
+})(); 

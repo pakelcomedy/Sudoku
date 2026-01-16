@@ -208,3 +208,26 @@ html,body{height:100%;margin:0;background:var(--bg);font-family: Inter, "Segoe U
 /* misc */
 .hidden{display:none!important}
 .visually-hidden{position:absolute!important;height:1px;width:1px;overflow:hidden;clip:rect(1px,1px,1px,1px);white-space:nowrap}
+
+/* ensure no CSS background grid remains (remove any previous background-image on .sudoku-board) */
+.sudoku-board {
+  background-image: none !important;
+}
+
+/* grid-line styling: placed on top of cells */
+#grid-lines { position: absolute; inset: 0; z-index: 40; pointer-events: none; }
+
+/* each line */
+.grid-line {
+  position: absolute;
+  background: #000;            /* pure black */
+  pointer-events: none;
+  z-index: 40;                 /* above cell text */
+}
+
+/* orientation helpers (not strictly required but clearer) */
+.grid-line.vertical { top: 0; height: 100%; }
+.grid-line.horizontal { left: 0; width: 100%; }
+
+/* thick variant */
+.grid-line.thick { background: #000; }
