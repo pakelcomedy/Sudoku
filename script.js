@@ -1,689 +1,51 @@
-/* ==========================================================================
-   Sudoku — script.js (full rewrite + integrated WebAudio SFX)
-   + row/cell-complete animations, per-game mistakes + total mistakes,
-   + service-worker registration for offline play (provide sw.js separately)
-   ========================================================================== */
+/* script.js
+   Renders 9x9 board, grid lines, selection overlays, cell pulses,
+   connects digit bank to setNumber, implements undo/clear/candidates.
+*/
 
-(function () {
-  'use strict';
+(() => {
+  // --- Config ---
+  const LONG_PRESS_MS = 450;
+  const REMOVALS = { easy: 36, medium: 44, hard: 52 };
 
-  /* -----------------------------
-     Selectors / DOM helpers
-     ----------------------------- */
-  const ID = {
-    board: 'sudoku-board',
-    template: 'cell-template',
-    newGame: 'new-game',
-    solve: 'solve',
-    reset: 'reset',
-    difficulty: 'difficulty',
-    timer: 'timer',
-    message: 'message',
-    togglePencil: 'toggle-pencil',
-    toggleTheme: 'toggle-theme',
-    save: 'save-progress',
-    load: 'load-progress',
-    leaderList: 'leader-list',
-    digitBank: 'digit-bank',
-    eraseBtn: 'erase-btn',
-    mistakes: 'mistakes'
-  };
+  // --- State ---
+  let solution = null; // 9x9 full solution
+  let board = null; // 9x9 current (0 = empty)
+  let fixed = null; // 9x9 booleans
+  let candidates = null; // 9x9 Set<int>
+  let selected = { r: null, c: null };
+  let mistakes = 0;
+  let undoStack = [];
 
-  const $id = (id) => document.getElementById(id);
-  const $ = (sel) => document.querySelector(sel);
-  const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+  // Cached DOM
+  const boardEl = document.getElementById('sudoku-board');
+  const gridLinesEl = document.getElementById('grid-lines');
+  const overlayRow = document.getElementById('overlay-row');
+  const overlayCol = document.getElementById('overlay-col');
+  const overlayBox = document.getElementById('overlay-box');
+  const template = document.getElementById('cell-template');
+  const timerEl = document.getElementById('timer');
+  const mistakesEl = document.getElementById('mistakes');
+  const mistakesMini = document.getElementById('mistakes-mini');
+  const digitBtns = Array.from(document.querySelectorAll('.digit-btn'));
+  const eraseBtn = document.getElementById('erase-btn');
+  const clearBtn = document.getElementById('clear-btn');
+  const undoBtn = document.getElementById('undo-btn');
+  const newBtn = document.getElementById('new-game');
+  const diffE = document.getElementById('diff-e');
+  const diffM = document.getElementById('diff-m');
+  const diffH = document.getElementById('diff-h');
+  const cellNodes = []; // 9x9 DOM wrappers cached after render
 
-  const boardEl = $id(ID.board);
-  const timerEl = $id(ID.timer);
-  const messageEl = $id(ID.message);
-  const mistakesEl = $id(ID.mistakes);
-  const digitBankEl = $id(ID.digitBank);
-  const leaderListEl = $id(ID.leaderList);
-
-  const btnNew = $id(ID.newGame);
-  const btnSolve = $id(ID.solve);
-  const btnReset = $id(ID.reset);
-  const selDifficulty = $id(ID.difficulty);
-  const togglePencilBtn = $id(ID.togglePencil);
-  const toggleThemeBtn = $id(ID.toggleTheme);
-  const btnSave = $id(ID.save);
-  const btnLoad = $id(ID.load);
-  const eraseBtn = $id(ID.eraseBtn);
-
-  /* -----------------------------
-     Add small CSS for animations (injected)
-     ----------------------------- */
-  (function injectAnimStyles() {
-    const css = `
-    /* completion animations */
-    .cell.complete-anim {
-      animation: cell-complete 650ms cubic-bezier(.2,.9,.2,1);
-      box-shadow: 0 6px 18px rgba(34,197,94,0.14);
-    }
-    @keyframes cell-complete {
-      0% { transform: scale(1); background: color-mix(in oklab, var(--panel) 92%, var(--ok) 8%); }
-      40% { transform: scale(1.12); background: color-mix(in oklab, var(--panel) 80%, var(--ok) 20%); }
-      100% { transform: scale(1); background: var(--panel); }
-    }
-    .row-complete .cell {
-      animation: row-complete-fade 900ms ease forwards;
-    }
-    @keyframes row-complete-fade {
-      0% { transform: translateY(-2px); box-shadow: 0 0 0 rgba(0,0,0,0); }
-      20% { transform: translateY(-6px); box-shadow: 0 10px 28px rgba(34,197,94,0.14); }
-      100% { transform: translateY(0); box-shadow: 0 0 0 rgba(0,0,0,0); }
-    }
-    `;
-    const s = document.createElement('style');
-    s.setAttribute('data-sudoku-anim', 'true');
-    s.appendChild(document.createTextNode(css));
-    document.head && document.head.appendChild(s);
-  })();
-
-  /* -----------------------------
-     Sound (Web Audio API) — small SFX engine
-     ----------------------------- */
-  class SFX {
-    constructor() {
-      this.ctx = null;
-      this.master = null;
-      this.enabled = true;
-      this._initVolumeFromStorage();
-    }
-
-    ensure() {
-      if (this.ctx) return;
-      try {
-        const C = window.AudioContext || window.webkitAudioContext;
-        if (!C) return;
-        this.ctx = new C();
-        this.master = this.ctx.createGain();
-        this.master.gain.value = parseFloat(localStorage.getItem('sudoku_sound_vol') || 0.12);
-        this.master.connect(this.ctx.destination);
-      } catch (e) {
-        this.ctx = null;
-      }
-    }
-
-    resume() {
-      this.ensure();
-      if (!this.ctx) return;
-      if (this.ctx.state === 'suspended') {
-        return this.ctx.resume().catch(() => {});
-      }
-    }
-
-    setVolume(v) {
-      this.ensure();
-      if (!this.master) return;
-      this.master.gain.value = v;
-      localStorage.setItem('sudoku_sound_vol', String(v));
-    }
-
-    _initVolumeFromStorage() {
-      const v = parseFloat(localStorage.getItem('sudoku_sound_vol'));
-      this._storedVol = (!isNaN(v) ? v : 0.12);
-    }
-
-    _playOsc({ freq = 440, type = 'sine', dur = 0.08, when = 0, gain = 1 }) {
-      if (!this.enabled) return;
-      this.ensure();
-      if (!this.ctx) return;
-      try {
-        const now = this.ctx.currentTime;
-        const o = this.ctx.createOscillator();
-        const g = this.ctx.createGain();
-        o.type = type;
-        o.frequency.setValueAtTime(freq, now + when);
-        g.gain.setValueAtTime(0.0001, now + when);
-        g.gain.exponentialRampToValueAtTime(gain, now + when + 0.006);
-        g.gain.exponentialRampToValueAtTime(0.0001, now + when + dur);
-        o.connect(g);
-        g.connect(this.master);
-        o.start(now + when);
-        o.stop(now + when + dur + 0.02);
-      } catch (e) { /* ignore */ }
-    }
-
-    playClick() { this._playOsc({ freq: 880, type: 'sine', dur: 0.06, gain: 0.18 }); }
-    playPlace() {
-      this._playOsc({ freq: 660, type: 'sine', dur: 0.10, gain: 0.16 });
-      this._playOsc({ freq: 880, type: 'triangle', dur: 0.06, when: 0.06, gain: 0.12 });
-    }
-    playErase() { this._playOsc({ freq: 220, type: 'sawtooth', dur: 0.12, gain: 0.12 }); }
-    playError() {
-      this._playOsc({ freq: 170, type: 'square', dur: 0.16, gain: 0.14 });
-      this._playOsc({ freq: 120, type: 'sine', dur: 0.18, when: 0.06, gain: 0.12 });
-    }
-    playToggle() { this._playOsc({ freq: 1100, type: 'triangle', dur: 0.06, gain: 0.12 }); }
-    playStart() { this._playOsc({ freq: 520, type: 'sine', dur: 0.09, gain: 0.14 }); }
-    playWin() {
-      this._playOsc({ freq: 880, type: 'sine', dur: 0.09, gain: 0.14, when: 0 });
-      this._playOsc({ freq: 1100, type: 'sine', dur: 0.09, gain: 0.13, when: 0.09 });
-      this._playOsc({ freq: 1320, type: 'sine', dur: 0.09, gain: 0.12, when: 0.18 });
-    }
+  // --- Utilities ---
+  function makeEmptyGrid(v = 0) {
+    return Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => v));
+  }
+  function deepCopyGrid(g) {
+    return g.map(row => row.slice());
   }
 
-  const sfx = new SFX();
-
-  /* -----------------------------
-     State & constants
-     ----------------------------- */
-  let grid = createEmptyGrid();
-  let initialGrid = null;
-  let solutionGrid = null;
-  let selected = null;
-  let pencilMode = false;
-  let elapsed = 0;
-  let timerInterval = null;
-  let mistakesCount = 0;
-  const invalidSet = new Set();
-
-  const LS_KEYS = { SAVED: 'sudoku_saved_v4', LEAD: 'sudoku_lead_v4', TOTAL_MISTAKES: 'sudoku_total_mistakes' };
-
-  const DIFF = {
-    easy: { minClues: 40, maxClues: 50 },
-    medium: { minClues: 30, maxClues: 35 },
-    hard: { minClues: 25, maxClues: 28 }
-  };
-
-  /* -----------------------------
-     Utilities
-     ----------------------------- */
-  function createEmptyGrid() {
-    return Array.from({ length: 9 }, () =>
-      Array.from({ length: 9 }, () => ({ value: null, given: false, notes: new Set() }))
-    );
-  }
-
-  function cloneGridModel(g) {
-    return g.map(row => row.map(cell => ({ value: cell.value, given: !!cell.given, notes: new Set(Array.from(cell.notes || [])) })));
-  }
-
-  function gridToNumbers(g) {
-    return g.map(row => row.map(cell => (cell.value === null ? 0 : cell.value)));
-  }
-
-  function numbersToModel(nums) {
-    return nums.map(row => row.map(v => ({ value: v === 0 ? null : v, given: v !== 0, notes: new Set() })));
-  }
-
-  function posKey(r, c) { return `${r},${c}`; }
-  function parseKey(k) { const [r, c] = k.split(',').map(Number); return { r, c }; }
-  function inRange(r, c) { return r >= 0 && r < 9 && c >= 0 && c < 9; }
-
-  function formatTime(s) {
-    const mm = String(Math.floor(s / 60)).padStart(2, '0');
-    const ss = String(s % 60).padStart(2, '0');
-    return `${mm}:${ss}`;
-  }
-
-  function setMessage(txt = '', ms = 2200) {
-    if (!messageEl) return;
-    messageEl.textContent = txt;
-    if (ms > 0) setTimeout(() => { if (messageEl && messageEl.textContent === txt) messageEl.textContent = ''; }, ms);
-  }
-
-  /* -----------------------------
-     Persisted total mistakes (all-time)
-     ----------------------------- */
-  function getTotalMistakesAllTime() {
-    const raw = localStorage.getItem(LS_KEYS.TOTAL_MISTAKES);
-    const n = raw ? Number(raw) : 0;
-    return Number.isInteger(n) ? n : 0;
-  }
-  function addToTotalMistakesAllTime(delta) {
-    const cur = getTotalMistakesAllTime();
-    const next = Math.max(0, cur + Number(delta || 0));
-    localStorage.setItem(LS_KEYS.TOTAL_MISTAKES, String(next));
-    return next;
-  }
-
-  /* -----------------------------
-     Build DOM (board + digit bank)
-     ----------------------------- */
-  function ensureBoardDOM() {
-    if (!boardEl) return;
-    boardEl.innerHTML = '';
-    for (let r = 0; r < 9; r++) {
-      for (let c = 0; c < 9; c++) {
-        const wrapper = document.createElement('div');
-        wrapper.className = 'cell-wrapper';
-        wrapper.dataset.row = r;
-        wrapper.dataset.col = c;
-        wrapper.dataset.box = Math.floor(r / 3) * 3 + Math.floor(c / 3);
-        wrapper.setAttribute('role', 'gridcell');
-
-        const inp = document.createElement('input');
-        inp.type = 'text';
-        inp.className = 'cell';
-        inp.readOnly = true;
-        inp.inputMode = 'none';
-        inp.autocomplete = 'off';
-        inp.setAttribute('aria-label', `Cell ${r + 1}-${c + 1}`);
-        inp.value = '';
-
-        const notes = document.createElement('div');
-        notes.className = 'notes';
-        for (let n = 1; n <= 9; n++) {
-          const nd = document.createElement('div');
-          nd.className = 'note';
-          nd.dataset.n = n;
-          nd.textContent = '';
-          notes.appendChild(nd);
-        }
-
-        wrapper.appendChild(inp);
-        wrapper.appendChild(notes);
-        boardEl.appendChild(wrapper);
-        attachCellListeners(wrapper, inp);
-      }
-    }
-  }
-
-  function ensureDigitBankDOM() {
-    if (!digitBankEl) return;
-    if (digitBankEl.children.length > 0) {
-      for (let d = 1; d <= 9; d++) {
-        let btn = digitBankEl.querySelector(`.digit-btn[data-digit="${d}"]`);
-        if (!btn) {
-          btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'digit-btn';
-          btn.dataset.digit = String(d);
-          const sp = document.createElement('span'); sp.className = 'digit'; sp.textContent = String(d);
-          const cnt = document.createElement('span'); cnt.className = 'count'; cnt.textContent = '9';
-          btn.appendChild(sp); btn.appendChild(cnt);
-          digitBankEl.appendChild(btn);
-        } else {
-          if (!btn.querySelector('.count')) {
-            const cnt = document.createElement('span'); cnt.className = 'count'; cnt.textContent = '9';
-            btn.appendChild(cnt);
-          }
-        }
-      }
-      if (!digitBankEl.querySelector('#' + ID.eraseBtn)) {
-        const er = document.createElement('button');
-        er.type = 'button';
-        er.id = ID.eraseBtn;
-        er.className = 'digit-btn';
-        er.innerHTML = `<span class="digit">⌫</span>`;
-        digitBankEl.appendChild(er);
-      }
-      return;
-    }
-
-    digitBankEl.innerHTML = '';
-    for (let d = 1; d <= 9; d++) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'digit-btn';
-      btn.dataset.digit = String(d);
-
-      const sp = document.createElement('span'); sp.className = 'digit'; sp.textContent = String(d);
-      const cnt = document.createElement('span'); cnt.className = 'count'; cnt.textContent = '9';
-      btn.appendChild(sp); btn.appendChild(cnt);
-      digitBankEl.appendChild(btn);
-    }
-    const er = document.createElement('button');
-    er.type = 'button';
-    er.id = ID.eraseBtn;
-    er.className = 'digit-btn';
-    er.innerHTML = `<span class="digit">⌫</span>`;
-    digitBankEl.appendChild(er);
-  }
-
-  /* -----------------------------
-     Render model -> DOM
-     ----------------------------- */
-  function renderFromModel() {
-    if (!boardEl) return;
-    const wrappers = Array.from(boardEl.children);
-    wrappers.forEach(w => {
-      const r = +w.dataset.row;
-      const c = +w.dataset.col;
-      const cell = grid[r][c];
-      const inp = w.querySelector('.cell');
-      const notes = w.querySelectorAll('.note');
-
-      if (cell.value !== null) {
-        inp.value = String(cell.value);
-        w.classList.add('has-value');
-      } else {
-        inp.value = '';
-        w.classList.remove('has-value');
-      }
-
-      if (cell.given) {
-        inp.classList.add('given');
-        inp.setAttribute('readonly', 'readonly');
-        inp.tabIndex = -1;
-      } else {
-        inp.classList.remove('given');
-        inp.removeAttribute('readonly');
-        inp.tabIndex = 0;
-      }
-
-      notes.forEach(nd => {
-        const n = Number(nd.dataset.n);
-        nd.textContent = cell.notes.has(n) ? n : '';
-      });
-
-      inp.classList.remove('invalid', 'highlight');
-      w.classList.remove('highlight', 'highlight-row', 'highlight-col', 'highlight-block');
-    });
-
-    if (selected) updateHighlights(selected.r, selected.c);
-    updateDigitCounts();
-    updateTimerUI();
-    updateMistakesUI(false);
-  }
-
-  /* -----------------------------
-     Selection / highlights
-     ----------------------------- */
-  function attachCellListeners(wrapper, inp) {
-    wrapper.addEventListener('click', (e) => {
-      e.preventDefault();
-      sfx.resume();
-      const r = +wrapper.dataset.row;
-      const c = +wrapper.dataset.col;
-      selectCell(r, c);
-      const el = wrapper.querySelector('.cell');
-      el && el.focus({ preventScroll: true });
-      sfx.playClick();
-    });
-
-    wrapper.addEventListener('dblclick', (e) => {
-      e.preventDefault();
-      setPencil(!pencilMode);
-      setMessage(`Pencil ${pencilMode ? 'ON' : 'OFF'}`, 900);
-      sfx.resume();
-      sfx.playToggle();
-    });
-
-    inp.addEventListener('focus', () => {
-      const r = +wrapper.dataset.row;
-      const c = +wrapper.dataset.col;
-      selectCell(r, c);
-    });
-  }
-
-  function selectCell(r, c) {
-    selected = { r, c };
-    updateHighlights(r, c);
-  }
-
-  function clearHighlights() {
-    $$('.cell-wrapper').forEach(w => {
-      w.classList.remove('highlight', 'highlight-row', 'highlight-col', 'highlight-block');
-      const inp = w.querySelector('.cell');
-      inp && inp.classList.remove('highlight');
-    });
-  }
-
-  function updateHighlights(r, c) {
-    clearHighlights();
-    const box = Math.floor(r / 3) * 3 + Math.floor(c / 3);
-    $$('.cell-wrapper').forEach(w => {
-      const rr = +w.dataset.row;
-      const cc = +w.dataset.col;
-      const bb = +w.dataset.box;
-      if (rr === r) w.classList.add('highlight-row');
-      if (cc === c) w.classList.add('highlight-col');
-      if (bb === box) w.classList.add('highlight-block');
-    });
-    const w = getWrapper(r, c);
-    if (w) {
-      w.classList.add('highlight');
-      const inp = w.querySelector('.cell');
-      inp && inp.classList.add('highlight');
-    }
-  }
-
-  function getWrapper(r, c) {
-    return boardEl ? boardEl.querySelector(`.cell-wrapper[data-row="${r}"][data-col="${c}"]`) : null;
-  }
-
-  /* -----------------------------
-     Put / toggle / erase operations
-     ----------------------------- */
-  function setValueAt(r, c, val, options = {}) {
-    if (!inRange(r, c)) return;
-    const cell = grid[r][c];
-    if (cell.given) return;
-    if (val === null) {
-      eraseAt(r, c);
-      return;
-    }
-    cell.value = val;
-    cell.notes.clear();
-    renderFromModel();
-
-    const conflicts = findConflictsForCell(r, c);
-
-    if (conflicts.length > 0) {
-      const newlyInvalid = [];
-      const placedKey = posKey(r, c);
-      if (!invalidSet.has(placedKey)) { newlyInvalid.push(placedKey); invalidSet.add(placedKey); }
-
-      for (const { r: cr, c: cc } of conflicts) {
-        const k = posKey(cr, cc);
-        if (!invalidSet.has(k)) { newlyInvalid.push(k); invalidSet.add(k); }
-      }
-
-      for (const k of newlyInvalid) {
-        const { r: rr, c: cc } = parseKey(k);
-        const w = getWrapper(rr, cc);
-        if (w) {
-          const inp = w.querySelector('.cell');
-          inp && inp.classList.add('invalid');
-          animateInvalid(w);
-        }
-      }
-
-      if (newlyInvalid.length > 0) {
-        mistakesCount += newlyInvalid.length;
-        const newTotal = addToTotalMistakesAllTime(newlyInvalid.length);
-        updateMistakesUI(true, newTotal);
-        sfx.resume();
-        sfx.playError();
-      }
-    } else {
-      autoCheckAndSyncInvalids();
-      sfx.resume();
-      sfx.playPlace();
-
-      // success: animate cell and check row
-      handleCellComplete(r, c);
-    }
-
-    updateDigitCounts(true);
-    maybeSolved();
-  }
-
-  function toggleNoteAt(r, c, n) {
-    if (!inRange(r, c)) return;
-    const cell = grid[r][c];
-    if (cell.given || cell.value !== null) return;
-    if (cell.notes.has(n)) cell.notes.delete(n); else cell.notes.add(n);
-    renderFromModel();
-    sfx.resume();
-    sfx.playClick();
-  }
-
-  function eraseAt(r, c) {
-    if (!inRange(r, c)) return;
-    const cell = grid[r][c];
-    if (cell.given) return;
-    const key = posKey(r, c);
-    if (invalidSet.has(key)) {
-      invalidSet.delete(key);
-      mistakesCount = Math.max(0, mistakesCount - 1);
-    }
-    cell.value = null;
-    cell.notes.clear();
-    renderFromModel();
-    autoCheckAndSyncInvalids();
-    sfx.resume();
-    sfx.playErase();
-  }
-
-  /* -----------------------------
-     Conflict detection & auto-check
-     ----------------------------- */
-  function findConflictsForCell(r, c) {
-    const val = grid[r][c].value;
-    if (!val) return [];
-    const conflicts = [];
-
-    for (let i = 0; i < 9; i++) if (i !== c && grid[r][i].value === val) conflicts.push({ r, c: i });
-    for (let i = 0; i < 9; i++) if (i !== r && grid[i][c].value === val) conflicts.push({ r: i, c });
-    const br = Math.floor(r / 3) * 3, bc = Math.floor(c / 3) * 3;
-    for (let rr = br; rr < br + 3; rr++) {
-      for (let cc = bc; cc < bc + 3; cc++) {
-        if ((rr !== r || cc !== c) && grid[rr][cc].value === val) {
-          if (!conflicts.some(x => x.r === rr && x.c === cc)) conflicts.push({ r: rr, c: cc });
-        }
-      }
-    }
-    return conflicts;
-  }
-
-  function isValidPlacement(numbers, r, c, num) {
-    for (let i = 0; i < 9; i++) {
-      if (numbers[r][i] === num) return false;
-      if (numbers[i][c] === num) return false;
-    }
-    const br = Math.floor(r / 3) * 3, bc = Math.floor(c / 3) * 3;
-    for (let rr = br; rr < br + 3; rr++) for (let cc = bc; cc < bc + 3; cc++) if (numbers[rr][cc] === num) return false;
-    return true;
-  }
-
-  function autoCheckAndSyncInvalids() {
-    $$('.cell').forEach(c => c.classList.remove('invalid'));
-    const nums = gridToNumbers(grid);
-    const currentInvalid = new Set();
-
-    for (let r = 0; r < 9; r++) {
-      for (let c = 0; c < 9; c++) {
-        const v = nums[r][c];
-        if (v === 0) continue;
-        nums[r][c] = 0;
-        if (!isValidPlacement(nums, r, c, v)) {
-          currentInvalid.add(posKey(r, c));
-          const w = getWrapper(r, c);
-          if (w) w.querySelector('.cell').classList.add('invalid');
-        }
-        nums[r][c] = v;
-      }
-    }
-
-    for (const k of Array.from(invalidSet)) {
-      if (!currentInvalid.has(k)) invalidSet.delete(k);
-    }
-    for (const k of currentInvalid) {
-      if (!invalidSet.has(k)) invalidSet.add(k);
-    }
-
-    updateMistakesUI(false);
-  }
-
-  /* -----------------------------
-     Animations for invalid + completions
-     ----------------------------- */
-  function animateInvalid(wrapper) {
-    const el = wrapper.querySelector('.cell');
-    if (!el || !el.animate) return;
-    try {
-      el.animate([
-        { transform: 'translateX(0)' },
-        { transform: 'translateX(-6px)' },
-        { transform: 'translateX(4px)' },
-        { transform: 'translateX(0)' }
-      ], { duration: 420, easing: 'cubic-bezier(.36,.07,.19,.97)' });
-    } catch (e) { }
-  }
-
-  function animateCellComplete(wrapper) {
-    const el = wrapper.querySelector('.cell');
-    if (!el) return;
-    el.classList.add('complete-anim');
-    setTimeout(() => el.classList.remove('complete-anim'), 800);
-  }
-
-  function animateRowComplete(rowIndex) {
-    // add class to wrappers in that row to trigger animation, then remove
-    const rowWrappers = Array.from(boardEl.querySelectorAll(`.cell-wrapper[data-row="${rowIndex}"]`));
-    rowWrappers.forEach(w => w.classList.add('row-complete'));
-    setTimeout(() => rowWrappers.forEach(w => w.classList.remove('row-complete')), 900);
-  }
-
-  /* -----------------------------
-     Solver & generator
-     ----------------------------- */
-  function solveSudoku(numbers) {
-    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) {
-      if (numbers[r][c] === 0) {
-        for (let n = 1; n <= 9; n++) {
-          if (isValidPlacement(numbers, r, c, n)) {
-            numbers[r][c] = n;
-            if (solveSudoku(numbers)) return true;
-            numbers[r][c] = 0;
-          }
-        }
-        return false;
-      }
-    }
-    return true;
-  }
-
-  function countSolutions(numbers, limit = 2) {
-    let count = 0;
-    function backtrack() {
-      if (count >= limit) return;
-      let found = false, er = -1, ec = -1;
-      for (let r = 0; r < 9 && !found; r++) {
-        for (let c = 0; c < 9; c++) {
-          if (numbers[r][c] === 0) { found = true; er = r; ec = c; break; }
-        }
-      }
-      if (!found) { count++; return; }
-      for (let n = 1; n <= 9; n++) {
-        if (isValidPlacement(numbers, er, ec, n)) {
-          numbers[er][ec] = n;
-          backtrack();
-          numbers[er][ec] = 0;
-          if (count >= limit) return;
-        }
-      }
-    }
-    backtrack();
-    return count;
-  }
-
-  function generateFullSolution() {
-    const nums = Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => 0));
-    function fill() {
-      for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) {
-        if (nums[r][c] === 0) {
-          const candidates = shuffle([1,2,3,4,5,6,7,8,9]);
-          for (const n of candidates) {
-            if (isValidPlacement(nums, r, c, n)) {
-              nums[r][c] = n;
-              if (fill()) return true;
-              nums[r][c] = 0;
-            }
-          }
-          return false;
-        }
-      }
-      return true;
-    }
-    fill();
-    return nums;
-  }
-
+  // Random shuffle helper
   function shuffle(arr) {
     for (let i = arr.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
@@ -692,403 +54,603 @@
     return arr;
   }
 
-  function generatePuzzle(difficulty = 'medium') {
-    setMessage('Generating puzzle...');
-    const solution = generateFullSolution();
-    const puzzle = deepCopy(solution);
-    const diff = DIFF[difficulty] || DIFF.medium;
-    const target = Math.floor(Math.random() * (diff.maxClues - diff.minClues + 1)) + diff.minClues;
+  // --- Sudoku generator (backtracking) ---
+  function createSolvedGrid() {
+    const g = makeEmptyGrid(0);
 
-    const coords = [];
-    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) coords.push({ r, c });
-    shuffle(coords);
+    function canPlace(r, c, n) {
+      for (let i = 0; i < 9; i++) {
+        if (g[r][i] === n) return false;
+        if (g[i][c] === n) return false;
+      }
+      const br = Math.floor(r / 3) * 3;
+      const bc = Math.floor(c / 3) * 3;
+      for (let rr = br; rr < br + 3; rr++) {
+        for (let cc = bc; cc < bc + 3; cc++) {
+          if (g[rr][cc] === n) return false;
+        }
+      }
+      return true;
+    }
 
-    let clues = 81;
-    for (let i = 0; i < coords.length && clues > target; i++) {
-      const { r, c } = coords[i];
-      const backup = puzzle[r][c];
-      puzzle[r][c] = 0;
-      const copy = deepCopy(puzzle);
-      const solCount = countSolutions(copy, 2);
-      if (solCount !== 1) {
-        puzzle[r][c] = backup;
-      } else {
-        clues--;
+    function fillCell(pos = 0) {
+      if (pos === 81) return true;
+      const r = Math.floor(pos / 9);
+      const c = pos % 9;
+      const nums = shuffle([1,2,3,4,5,6,7,8,9].slice());
+      for (const n of nums) {
+        if (canPlace(r, c, n)) {
+          g[r][c] = n;
+          if (fillCell(pos + 1)) return true;
+          g[r][c] = 0;
+        }
+      }
+      return false;
+    }
+
+    const ok = fillCell(0);
+    if (!ok) throw new Error('Failed to generate solution');
+    return g;
+  }
+
+  // Remove cells (random) - no uniqueness checking (fast)
+  function removeCells(grid, removals) {
+    const g = deepCopyGrid(grid);
+    const indices = shuffle(Array.from({ length: 81 }, (_, i) => i));
+    let removed = 0;
+    for (const idx of indices) {
+      if (removed >= removals) break;
+      const r = Math.floor(idx / 9);
+      const c = idx % 9;
+      if (g[r][c] !== 0) {
+        g[r][c] = 0;
+        removed++;
+      }
+    }
+    return g;
+  }
+
+  // --- Model operations ---
+  function restart(difficulty = 'medium') {
+    solution = createSolvedGrid();
+    board = deepCopyGrid(solution);
+    const removals = REMOVALS[difficulty] ?? REMOVALS.medium;
+    board = removeCells(board, removals);
+    fixed = board.map(r => r.map(v => v !== 0));
+    candidates = Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => new Set()));
+    selected = { r: null, c: null };
+    mistakes = 0;
+    undoStack = [];
+    renderBoard();
+    installGridLines(); // align lines after render
+    updateAllCounts();
+    updateMistakes();
+    updateUndoButton();
+  }
+
+  function pushUndo() {
+    const snapshot = {
+      board: deepCopyGrid(board),
+      candidates: candidates.map(row => row.map(s => new Set(Array.from(s)))),
+      mistakes,
+      selected: { ...selected }
+    };
+    undoStack.push(snapshot);
+    if (undoStack.length > 100) undoStack.shift();
+    updateUndoButton();
+  }
+
+  function undo() {
+    if (!undoStack.length) return;
+    const s = undoStack.pop();
+    board = s.board;
+    candidates = s.candidates;
+    mistakes = s.mistakes;
+    selected = s.selected;
+    renderBoard(); // full rerender
+    updateAllCounts();
+    updateMistakes();
+    updateUndoButton();
+    positionOverlays();
+  }
+
+  function setNumber(r, c, value, isNote = false) {
+    if (!inBounds(r, c)) return;
+    if (fixed[r][c]) return;
+
+    if (isNote) {
+      pushUndo();
+      const set = candidates[r][c];
+      if (set.has(value)) set.delete(value);
+      else set.add(value);
+      renderCell(r, c);
+      return;
+    }
+
+    pushUndo();
+    board[r][c] = value;
+    candidates[r][c].clear();
+
+    // mistakes compare with solution
+    if (solution && solution[r][c] !== value) {
+      mistakes++;
+      // wrong feedback
+      animateWrongCell(r, c);
+    } else {
+      // correct feedback
+      animateCorrectCell(r, c);
+    }
+
+    renderCell(r, c);
+    renderConflicts();
+    updateAllCounts();
+    updateMistakes();
+
+    // completion check for row/col/box containing the cell
+    if (isRowComplete(r)) {
+      pulseOverlay('row', r);
+    }
+    if (isColComplete(c)) {
+      pulseOverlay('col', c);
+    }
+    if (isBoxCompleteForCell(r, c)) {
+      pulseOverlay('box', r, c);
+    }
+  }
+
+  function clearCell(r, c) {
+    if (!inBounds(r, c)) return;
+    if (fixed[r][c]) return;
+    pushUndo();
+    board[r][c] = 0;
+    candidates[r][c].clear();
+    renderCell(r, c);
+    renderConflicts();
+    updateAllCounts();
+    positionOverlays();
+  }
+
+  function inBounds(r, c) {
+    return r >= 0 && r < 9 && c >= 0 && c < 9;
+  }
+
+  // --- Rendering ---
+  function renderBoard() {
+    // Clear board children except overlays placeholders
+    // We'll reconstruct cells and keep overlay placeholders (#grid-lines, overlays)
+    // Remove all children then recreate overlays then cells to ensure ordering
+    boardEl.innerHTML = '';
+    // recreate overlay placeholders
+    boardEl.appendChild(gridLinesEl);
+    boardEl.appendChild(overlayRow);
+    boardEl.appendChild(overlayCol);
+    boardEl.appendChild(overlayBox);
+
+    // build cells
+    for (let r = 0; r < 9; r++) {
+      cellNodes[r] = [];
+      for (let c = 0; c < 9; c++) {
+        const tpl = template.content.cloneNode(true);
+        const wrapper = tpl.querySelector('.cell-wrapper');
+        wrapper.dataset.row = r;
+        wrapper.dataset.col = c;
+        wrapper.dataset.box = Math.floor(r/3)*3 + Math.floor(c/3);
+        const input = wrapper.querySelector('.cell');
+        const notesEl = wrapper.querySelector('.notes');
+
+        // set initial value
+        const v = board[r][c];
+        input.value = v === 0 ? '' : String(v);
+        if (fixed[r][c]) {
+          input.classList.add('fixed');
+        } else {
+          input.classList.remove('fixed');
+        }
+
+        // apply candidate notes if any
+        const set = candidates[r][c];
+        for (let n = 1; n <= 9; n++) {
+          const noteEl = notesEl.querySelector(`.note[data-n="${n}"]`);
+          noteEl.textContent = set.has(n) ? String(n) : '';
+        }
+
+        // add event handlers on wrapper (for selection and long press)
+        attachCellEvents(wrapper, r, c);
+
+        // append to board
+        boardEl.appendChild(wrapper);
+        cellNodes[r][c] = wrapper;
       }
     }
 
-    setMessage('', 50);
-    return { puzzle, solution };
+    renderConflicts();
+    positionOverlays();
   }
 
-  function deepCopy(arr) { return arr.map(r => r.slice()); }
+  function renderCell(r, c) {
+    const wrapper = cellNodes[r][c];
+    if (!wrapper) return;
+    const input = wrapper.querySelector('.cell');
+    const notesEl = wrapper.querySelector('.notes');
+    const v = board[r][c];
+    input.value = v === 0 ? '' : String(v);
+    if (fixed[r][c]) input.classList.add('fixed');
+    else input.classList.remove('fixed');
 
-  /* -----------------------------
-     Completion helpers: cell & row completed detection
-     ----------------------------- */
-  function isCellCompleted(r, c) {
-    const cell = grid[r][c];
-    if (!cell || cell.value === null) return false;
-    if (solutionGrid && Array.isArray(solutionGrid)) {
-      return solutionGrid[r][c] === cell.value;
+    // candidates
+    const set = candidates[r][c];
+    for (let n = 1; n <= 9; n++) {
+      const noteEl = notesEl.querySelector(`.note[data-n="${n}"]`);
+      noteEl.textContent = set.has(n) ? String(n) : '';
     }
-    // fallback: cell has no conflicts
-    return findConflictsForCell(r, c).length === 0;
   }
 
-  function isRowCompleted(r) {
-    // all cells filled and (match solution if available) or no conflicts in row
-    for (let c = 0; c < 9; c++) {
-      if (grid[r][c].value === null) return false;
-      if (solutionGrid && Array.isArray(solutionGrid) && grid[r][c].value !== solutionGrid[r][c]) return false;
+  // Conflicts: mark any cell that duplicates a value in its row/col/box
+  function renderConflicts() {
+    // clear all
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        cellNodes[r][c].classList.remove('has-conflict');
+      }
     }
-    // if no solutionGrid: ensure row has no conflicts
-    if (!solutionGrid) {
-      for (let c = 0; c < 9; c++) if (findConflictsForCell(r, c).length > 0) return false;
+
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        const v = board[r][c];
+        if (v === 0) continue;
+        // row/col/box check
+        for (let cc = 0; cc < 9; cc++) {
+          if (cc !== c && board[r][cc] === v) {
+            cellNodes[r][c].classList.add('has-conflict');
+            cellNodes[r][cc].classList.add('has-conflict');
+          }
+        }
+        for (let rr = 0; rr < 9; rr++) {
+          if (rr !== r && board[rr][c] === v) {
+            cellNodes[r][c].classList.add('has-conflict');
+            cellNodes[rr][c].classList.add('has-conflict');
+          }
+        }
+        const br = Math.floor(r/3)*3;
+        const bc = Math.floor(c/3)*3;
+        for (let rr = br; rr < br+3; rr++) {
+          for (let cc = bc; cc < bc+3; cc++) {
+            if ((rr !== r || cc !== c) && board[rr][cc] === v) {
+              cellNodes[r][c].classList.add('has-conflict');
+              cellNodes[rr][cc].classList.add('has-conflict');
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // --- Grid lines (8 vertical + 8 horizontal), drawn into #grid-lines ---
+// REPLACE your old installGridLines() with this improved version
+function installGridLines() {
+  // clear existing
+  gridLinesEl.innerHTML = '';
+
+  // Board size (use clientWidth/clientHeight to avoid transform/viewport offsets)
+  const w = boardEl.clientWidth;
+  const h = boardEl.clientHeight;
+
+  const thinPx = 1;   // thin line width in px
+  const thickPx = 3;  // thick separator width in px
+
+  // vertical lines: i = 1..8
+  for (let i = 1; i <= 8; i++) {
+    const isThick = (i % 3 === 0);
+    const widthPx = isThick ? thickPx : thinPx;
+
+    const line = document.createElement('div');
+    line.className = 'grid-line vertical' + (isThick ? ' thick' : '');
+    // Position with percentage + calc to avoid rounding drift:
+    // left = calc(i*100/9% - widthPx/2)
+    line.style.left = `calc(${(i * 100 / 9).toFixed(6)}% - ${Math.round(widthPx/2)}px)`;
+    line.style.width = `${widthPx}px`;
+    line.style.top = '0';
+    line.style.height = '100%';
+    gridLinesEl.appendChild(line);
+  }
+
+  // horizontal lines: i = 1..8
+  for (let i = 1; i <= 8; i++) {
+    const isThick = (i % 3 === 0);
+    const heightPx = isThick ? thickPx : thinPx;
+
+    const line = document.createElement('div');
+    line.className = 'grid-line horizontal' + (isThick ? ' thick' : '');
+    // top = calc(i*100/9% - heightPx/2)
+    line.style.top = `calc(${(i * 100 / 9).toFixed(6)}% - ${Math.round(heightPx/2)}px)`;
+    line.style.height = `${heightPx}px`;
+    line.style.left = '0';
+    line.style.width = '100%';
+    gridLinesEl.appendChild(line);
+  }
+
+  // Make sure overlays are above board cells
+  gridLinesEl.style.position = 'absolute';
+  gridLinesEl.style.inset = '0';
+  gridLinesEl.style.pointerEvents = 'none';
+}
+
+
+  // --- Selection & overlays ---
+  function attachCellEvents(wrapper, r, c) {
+    // click selects cell
+    wrapper.addEventListener('click', (e) => {
+      e.preventDefault();
+      selectCell(r, c);
+    });
+
+    // longpress to clear cell (like Flutter long press)
+    let longTimer = null;
+    wrapper.addEventListener('pointerdown', (ev) => {
+      // start longpress timer — clear cell if longpress
+      longTimer = setTimeout(() => {
+        if (!fixed[r][c]) {
+          clearCell(r, c);
+        }
+      }, 600);
+    });
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach(evName => {
+      wrapper.addEventListener(evName, () => {
+        if (longTimer) { clearTimeout(longTimer); longTimer = null; }
+      });
+    });
+  }
+
+  function selectCell(r, c) {
+    // toggle selection
+    if (selected.r === r && selected.c === c) {
+      selected = { r: null, c: null };
+    } else {
+      selected = { r, c };
+    }
+    updateSelectionUI();
+    positionOverlays();
+  }
+
+  function updateSelectionUI() {
+    for (let rr = 0; rr < 9; rr++) {
+      for (let cc = 0; cc < 9; cc++) {
+        const wrapper = cellNodes[rr][cc];
+        if (!wrapper) continue;
+        if (selected.r === rr && selected.c === cc) wrapper.classList.add('selected');
+        else wrapper.classList.remove('selected');
+      }
+    }
+  }
+
+  function positionOverlays() {
+    // Hide overlays if no selection
+    if (selected.r === null || selected.c === null) {
+      overlayRow.style.display = 'none';
+      overlayCol.style.display = 'none';
+      overlayBox.style.display = 'none';
+      return;
+    }
+    const rect = boardEl.getBoundingClientRect();
+    const cellW = rect.width / 9;
+    const cellH = rect.height / 9;
+
+    // row
+    overlayRow.style.display = 'block';
+    overlayRow.style.left = '0px';
+    overlayRow.style.width = rect.width + 'px';
+    overlayRow.style.top = (selected.r * cellH) + 'px';
+    overlayRow.style.height = cellH + 'px';
+
+    // col
+    overlayCol.style.display = 'block';
+    overlayCol.style.top = '0px';
+    overlayCol.style.height = rect.height + 'px';
+    overlayCol.style.left = (selected.c * cellW) + 'px';
+    overlayCol.style.width = cellW + 'px';
+
+    // box
+    const br = Math.floor(selected.r / 3) * 3;
+    const bc = Math.floor(selected.c / 3) * 3;
+    overlayBox.style.display = 'block';
+    overlayBox.style.left = (bc * cellW) + 'px';
+    overlayBox.style.top = (br * cellH) + 'px';
+    overlayBox.style.width = (3 * cellW) + 'px';
+    overlayBox.style.height = (3 * cellH) + 'px';
+  }
+
+  // pulse overlay for completion
+  function pulseOverlay(kind, rOrC, cIfBox) {
+    let el;
+    if (kind === 'row') el = overlayRow;
+    else if (kind === 'col') el = overlayCol;
+    else el = overlayBox;
+    if (!el) return;
+    el.classList.remove('pulse');
+    // trigger reflow
+    void el.offsetWidth;
+    el.classList.add('pulse');
+    // remove after animation
+    setTimeout(() => el.classList.remove('pulse'), 700);
+  }
+
+  // --- Animations for cells ---
+  function animateCorrectCell(r, c) {
+    const wrapper = cellNodes[r][c];
+    if (!wrapper) return;
+    const el = wrapper;
+    el.style.transition = 'transform 180ms cubic-bezier(.2,.9,.2,1)';
+    el.style.transform = 'scale(1.14)';
+    setTimeout(() => {
+      el.style.transform = 'scale(1)';
+      setTimeout(() => {
+        el.style.transition = '';
+        el.style.transform = '';
+      }, 200);
+    }, 180);
+  }
+
+  function animateWrongCell(r, c) {
+    const wrapper = cellNodes[r][c];
+    if (!wrapper) return;
+    // red flash
+    const orig = wrapper.style.background;
+    wrapper.classList.add('has-conflict');
+    setTimeout(() => {
+      // keep conflict class (still marks duplicates), but flash effect can be temporary
+      // we won't remove has-conflict here because duplicates logic will handle it
+    }, 300);
+  }
+
+  // --- helpers for completion checks ---
+  function isRowComplete(r) {
+    if (r === null) return false;
+    for (let c = 0; c < 9; c++) if (board[r][c] === 0) return false;
+    return true;
+  }
+  function isColComplete(c) {
+    if (c === null) return false;
+    for (let r = 0; r < 9; r++) if (board[r][c] === 0) return false;
+    return true;
+  }
+  function isBoxCompleteForCell(r, c) {
+    if (r === null || c === null) return false;
+    const br = Math.floor(r / 3) * 3;
+    const bc = Math.floor(c / 3) * 3;
+    for (let rr = br; rr < br + 3; rr++) {
+      for (let cc = bc; cc < bc + 3; cc++) {
+        if (board[rr][cc] === 0) return false;
+      }
     }
     return true;
   }
 
-  function handleCellComplete(r, c) {
-    const w = getWrapper(r, c);
-    if (!w) return;
-    if (isCellCompleted(r, c)) {
-      animateCellComplete(w);
-      sfx.resume(); sfx.playClick();
-      setMessage('Good! Cell complete.', 900);
+  // --- Digit bank handlers (tap & long press for notes) ---
+  function attachDigitBank() {
+    digitBtns.forEach(btn => {
+      const n = Number(btn.dataset.digit);
+      let timer = null;
+      const start = (e) => {
+        e.preventDefault();
+        timer = setTimeout(() => {
+          // long press: toggle candidate on selected
+          if (selected.r !== null && selected.c !== null) {
+            setNumber(selected.r, selected.c, n, true);
+          }
+        }, LONG_PRESS_MS);
+      };
+      const cancel = (e) => {
+        if (timer) { clearTimeout(timer); timer = null; }
+      };
+      btn.addEventListener('pointerdown', start);
+      ['pointerup','pointerleave','pointercancel'].forEach(ev => btn.addEventListener(ev, cancel));
 
-      // check row completion
-      if (isRowCompleted(r)) {
-        animateRowComplete(r);
-        sfx.resume(); sfx.playWin();
-        setMessage('Nice — row complete!', 1600);
-      }
-    }
-  }
-
-  /* -----------------------------
-     Public actions
-     ----------------------------- */
-  function startNewGame(difficulty = 'medium') {
-    stopTimer();
-    setMessage('Preparing new puzzle — please wait...', 1400);
-    setTimeout(() => {
-      const { puzzle, solution } = generatePuzzle(difficulty);
-      grid = numbersToModel(puzzle);
-      initialGrid = cloneGridModel(grid);
-      solutionGrid = deepCopy(solution);
-      elapsed = 0;
-      mistakesCount = 0;
-      invalidSet.clear();
-      renderFromModel();
-      startTimer();
-      sfx.resume(); sfx.playStart();
-      setMessage(`New ${difficulty} puzzle ready.`, 1600);
-    }, 40);
-  }
-
-  function resetToInitial() {
-    if (!initialGrid) return;
-    stopTimer();
-    grid = cloneGridModel(initialGrid);
-    elapsed = 0;
-    mistakesCount = 0;
-    invalidSet.clear();
-    renderFromModel();
-    startTimer();
-    sfx.resume(); sfx.playStart();
-    setMessage('Reset to initial puzzle.');
-  }
-
-  function solveInstant() {
-    if (!solutionGrid) return;
-    stopTimer();
-    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) {
-      grid[r][c].value = solutionGrid[r][c];
-      grid[r][c].notes.clear();
-    }
-    invalidSet.clear();
-    renderFromModel();
-    sfx.resume(); sfx.playWin();
-    setMessage('Puzzle solved.');
-    maybeSolved(true);
-  }
-
-  /* -----------------------------
-     Timer + UI
-     ----------------------------- */
-  function startTimer() {
-    stopTimer();
-    timerInterval = setInterval(() => {
-      elapsed++;
-      updateTimerUI();
-    }, 1000);
-  }
-  function stopTimer() {
-    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
-  }
-  function updateTimerUI() { if (timerEl) timerEl.textContent = formatTime(elapsed); }
-
-  /* -----------------------------
-     Save / Load / Leaderboard
-     ----------------------------- */
-  function replacer(key, value) {
-    if (value instanceof Set) return { __set: Array.from(value) };
-    return value;
-  }
-  function reviver(key, value) {
-    if (value && value.__set) return new Set(value.__set);
-    return value;
-  }
-
-  function saveProgress() {
-    try {
-      const payload = { grid, solutionGrid, elapsed, difficulty: selDifficulty ? selDifficulty.value : 'medium', ts: Date.now() };
-      localStorage.setItem(LS_KEYS.SAVED, JSON.stringify(payload, replacer));
-      setMessage('Game saved locally.');
-    } catch (e) {
-      console.error(e);
-      setMessage('Failed to save.');
-    }
-  }
-
-  function loadProgress() {
-    try {
-      const raw = localStorage.getItem(LS_KEYS.SAVED);
-      if (!raw) { setMessage('No saved game.'); return; }
-      const obj = JSON.parse(raw, reviver);
-      grid = obj.grid.map(row => row.map(cell => ({ value: cell.value === null ? null : cell.value, given: !!cell.given, notes: (cell.notes instanceof Set) ? new Set(Array.from(cell.notes)) : new Set() })));
-      initialGrid = cloneGridModel(grid);
-      solutionGrid = obj.solutionGrid ? deepCopy(obj.solutionGrid) : null;
-      elapsed = obj.elapsed || 0;
-      mistakesCount = 0;
-      invalidSet.clear();
-      renderFromModel();
-      startTimer();
-      setMessage('Saved game loaded.');
-    } catch (e) {
-      console.error(e);
-      setMessage('Failed to load save.');
-    }
-  }
-
-  function recordCompletion() {
-    try {
-      const raw = localStorage.getItem(LS_KEYS.LEAD);
-      const arr = raw ? JSON.parse(raw) : [];
-      arr.push({ time: elapsed, difficulty: selDifficulty ? selDifficulty.value : 'medium', date: new Date().toISOString() });
-      arr.sort((a, b) => a.time - b.time);
-      localStorage.setItem(LS_KEYS.LEAD, JSON.stringify(arr.slice(0, 10)));
-      renderLeaderboard();
-    } catch (e) { console.error(e); }
-  }
-
-  function renderLeaderboard() {
-    if (!leaderListEl) return;
-    const raw = localStorage.getItem(LS_KEYS.LEAD);
-    const arr = raw ? JSON.parse(raw) : [];
-    leaderListEl.innerHTML = '';
-    for (const it of arr) {
-      const li = document.createElement('li');
-      li.textContent = `${formatTime(it.time)} — ${it.difficulty} — ${new Date(it.date).toLocaleString()}`;
-      leaderListEl.appendChild(li);
-    }
-  }
-
-  /* -----------------------------
-     Completion check
-     ----------------------------- */
-  function maybeSolved(quiet = false) {
-    const nums = gridToNumbers(grid);
-    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) if (nums[r][c] === 0) return false;
-    const copy = deepCopy(nums);
-    if (solveSudoku(copy)) {
-      stopTimer();
-      if (!quiet) setMessage(`Solved in ${formatTime(elapsed)}!`);
-      recordCompletion();
-      sfx.resume(); sfx.playWin();
-      return true;
-    } else {
-      autoCheckAndSyncInvalids();
-      return false;
-    }
-  }
-
-  /* -----------------------------
-     Digit bank handlers & counts
-     ----------------------------- */
-  function updateDigitCounts(animate = false) {
-    if (!digitBankEl) return;
-    const counts = Array(10).fill(9);
-    const nums = gridToNumbers(grid);
-    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) {
-      const v = nums[r][c];
-      if (v >= 1 && v <= 9) counts[v]--;
-    }
-    const btns = digitBankEl.querySelectorAll('.digit-btn');
-    btns.forEach(b => {
-      const d = Number(b.dataset.digit);
-      const span = b.querySelector('.count');
-      if (span && !Number.isNaN(d)) {
-        const newText = String(Math.max(0, counts[d]));
-        if (animate && span.textContent !== newText) {
-          span.classList.remove('count-update'); void span.offsetWidth; span.classList.add('count-update');
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        // click: set number if selection exists
+        if (selected.r !== null && selected.c !== null) {
+          setNumber(selected.r, selected.c, n, false);
         }
-        span.textContent = newText;
-      }
-      if (!Number.isNaN(d)) {
-        b.disabled = counts[d] <= 0;
-        b.setAttribute('aria-disabled', b.disabled ? 'true' : 'false');
-      }
+      });
+    });
+
+    // erase button behaves like Clear: clear selected cell
+    eraseBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (selected.r !== null && selected.c !== null) clearCell(selected.r, selected.c);
     });
   }
 
-  function handleDigitPress(d) {
-    if (!selected) { setMessage('Pilih sebuah kotak dulu.'); return; }
-    sfx.resume();
-    const { r, c } = selected;
-    const cell = grid[r][c];
-    if (cell.given) { setMessage('Kotak ini adalah given — tidak bisa diubah.'); sfx.playClick(); return; }
-    if (pencilMode) {
-      toggleNoteAt(r, c, d);
-    } else {
-      setValueAt(r, c, d);
+  // --- footer buttons ---
+  clearBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (selected.r !== null && selected.c !== null) clearCell(selected.r, selected.c);
+  });
+
+  undoBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    undo();
+  });
+
+  // New game & difficulty chips
+  newBtn.addEventListener('click', () => {
+    // difficulty from selected chip
+    const diff = diffE.classList.contains('selected') ? 'easy' : diffH.classList.contains('selected') ? 'hard' : 'medium';
+    restart(diff);
+  });
+  function setDifficultyChip(el) {
+    diffE.classList.remove('selected'); diffE.setAttribute('aria-pressed','false');
+    diffM.classList.remove('selected'); diffM.setAttribute('aria-pressed','false');
+    diffH.classList.remove('selected'); diffH.setAttribute('aria-pressed','false');
+    el.classList.add('selected'); el.setAttribute('aria-pressed','true');
+  }
+  diffE.addEventListener('click', () => { setDifficultyChip(diffE); restart('easy'); });
+  diffM.addEventListener('click', () => { setDifficultyChip(diffM); restart('medium'); });
+  diffH.addEventListener('click', () => { setDifficultyChip(diffH); restart('hard'); });
+
+  // --- counts & UI update helpers ---
+  function updateAllCounts() {
+    // compute remaining per number (9 - occurrences)
+    const counts = Array(9).fill(0);
+    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) {
+      const v = board[r][c];
+      if (v >= 1 && v <= 9) counts[v-1]++;
     }
+    digitBtns.forEach(btn => {
+      const n = Number(btn.dataset.digit);
+      const countEl = btn.querySelector('.count');
+      if (countEl) countEl.textContent = String(9 - counts[n-1]);
+      btn.setAttribute('aria-pressed','false');
+    });
   }
 
-  function handleErase() {
-    if (!selected) { setMessage('Pilih sebuah kotak dulu.'); return; }
-    sfx.resume();
-    const { r, c } = selected;
-    eraseAt(r, c);
-    updateDigitCounts(true);
+  function updateMistakes() {
+    mistakesEl.textContent = String(mistakes);
+    mistakesMini.textContent = String(mistakes);
   }
 
-  /* -----------------------------
-     Keyboard support
-     ----------------------------- */
-  document.addEventListener('keydown', (e) => {
-    if (!selected && !(e.key >= '1' && e.key <= '9')) return;
-    const { r, c } = selected || {};
-    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
-      e.preventDefault();
-      let nr = r, nc = c;
-      if (e.key === 'ArrowUp') nr = (r + 8) % 9;
-      if (e.key === 'ArrowDown') nr = (r + 1) % 9;
-      if (e.key === 'ArrowLeft') nc = (c + 8) % 9;
-      if (e.key === 'ArrowRight') nc = (c + 1) % 9;
-      selectCell(nr, nc);
-      const w = getWrapper(nr, nc);
-      if (w) w.querySelector('.cell').focus({ preventScroll: true });
-    } else if (e.key === 'Escape') {
-      selected = null; clearHighlights(); document.activeElement && document.activeElement.blur();
+  function updateUndoButton() {
+    if (undoStack.length) undoBtn.removeAttribute('disabled');
+    else undoBtn.setAttribute('disabled', 'true');
+  }
+
+  // Set up keyboard input for convenience (1-9 keys to set, Backspace to clear)
+  window.addEventListener('keydown', (e) => {
+    if (!selected.r && selected.r !== 0) return;
+    if (e.key >= '1' && e.key <= '9') {
+      setNumber(selected.r, selected.c, Number(e.key));
     } else if (e.key === 'Backspace' || e.key === 'Delete') {
-      e.preventDefault(); handleErase(); updateDigitCounts(true);
-    } else if (e.key >= '1' && e.key <= '9') {
-      e.preventDefault(); sfx.resume(); handleDigitPress(Number(e.key)); updateDigitCounts(true);
+      clearCell(selected.r, selected.c);
+    } else if (e.key === 'Escape') {
+      selected = { r: null, c: null };
+      updateSelectionUI();
+      positionOverlays();
     }
   });
 
-  /* -----------------------------
-     UI wiring (buttons + bank)
-     ----------------------------- */
-  function wireUI() {
-    if (btnNew) btnNew.addEventListener('click', () => { sfx.resume(); startNewGame(selDifficulty ? selDifficulty.value : 'medium'); });
-    if (btnReset) btnReset.addEventListener('click', () => { sfx.resume(); resetToInitial(); });
-    if (btnSolve) btnSolve.addEventListener('click', () => { if (confirm('Selesaikan papan sekarang?')) { sfx.resume(); solveInstant(); } });
-    if (togglePencilBtn) togglePencilBtn.addEventListener('click', () => {
-      setPencil(!pencilMode);
-      setMessage(`Pencil ${pencilMode ? 'ON' : 'OFF'}`, 900);
-      sfx.resume(); sfx.playToggle();
-    });
-    if (toggleThemeBtn) toggleThemeBtn.addEventListener('click', () => {
-      const root = document.documentElement;
-      const isDark = root.getAttribute('data-theme') === 'dark' || root.classList.contains('dark');
-      if (isDark) { root.removeAttribute('data-theme'); root.classList.remove('dark'); toggleThemeBtn.setAttribute('aria-pressed', 'false'); }
-      else { root.setAttribute('data-theme', 'dark'); root.classList.add('dark'); toggleThemeBtn.setAttribute('aria-pressed', 'true'); }
-      sfx.resume(); sfx.playToggle();
-    });
-    if (btnSave) btnSave.addEventListener('click', () => { sfx.resume(); saveProgress(); });
-    if (btnLoad) btnLoad.addEventListener('click', () => { sfx.resume(); loadProgress(); });
-
-    if (digitBankEl) {
-      digitBankEl.addEventListener('click', (e) => {
-        const btn = e.target.closest('.digit-btn');
-        if (!btn) return;
-        sfx.resume();
-        if (btn.id === ID.eraseBtn) { handleErase(); updateDigitCounts(true); return; }
-        const d = Number(btn.dataset.digit);
-        if (!Number.isNaN(d)) {
-          handleDigitPress(d);
-          updateDigitCounts(true);
-        }
-      });
-    }
-  }
-
-  function setPencil(flag) {
-    pencilMode = !!flag;
-    if (togglePencilBtn) {
-      togglePencilBtn.setAttribute('aria-pressed', pencilMode ? 'true' : 'false');
-      togglePencilBtn.classList.toggle('active', pencilMode);
-    }
-  }
-
-  function updateMistakesUI(animate = false, totalAllTime = null) {
-    if (!mistakesEl) return;
-    const total = totalAllTime !== null ? totalAllTime : getTotalMistakesAllTime();
-    mistakesEl.textContent = `Mistakes: ${mistakesCount} (Total: ${total})`;
-    if (animate) {
-      animateMistakesCounter();
-    }
-  }
-
-  /* -----------------------------
-     Init + service worker registration (offline)
-     ----------------------------- */
-  function registerServiceWorker() {
-    if (!('serviceWorker' in navigator)) return;
-    // try to register /sw.js at site root
-    navigator.serviceWorker.register('/sw.js').then(reg => {
-      // success
-      // console.log('SW registered', reg);
-    }).catch(err => {
-      // console.log('SW register failed', err);
-    });
-  }
-
+  // --- initialization ---
   function init() {
-    if (boardEl) ensureBoardDOM();
-    if (digitBankEl) ensureDigitBankDOM();
-
-    renderFromModel();
-    wireUI();
-    renderLeaderboard();
-
-    // register service worker for offline support
-    try { registerServiceWorker(); } catch (e) {}
-
-    // Start a new game by default
-    startNewGame(selDifficulty ? selDifficulty.value : 'medium');
-
-    setTimeout(() => setMessage('Klik kotak, lalu pilih angka di bar bawah. Double-click untuk pencil.'), 1200);
+    // create initial puzzle (default medium)
+    restart('medium');
+    attachDigitBank();
+    // ensure grid lines update on resize
+    let t;
+    window.addEventListener('resize', () => {
+      clearTimeout(t);
+      t = setTimeout(() => {
+        installGridLines();
+        positionOverlays();
+      }, 120);
+    });
   }
 
-  /* -----------------------------
-     Debug helpers
-     ----------------------------- */
-  window._sudoku = {
-    getGrid: () => grid,
-    getNumbers: () => gridToNumbers(grid),
-    getSolution: () => solutionGrid,
-    generatePuzzle,
-    solveSudoku,
-    setPencil,
-    getMistakes: () => mistakesCount,
-    sfx // e.g., _sudoku.sfx.setVolume(0.06)
-  };
+  // expose restart to window for dev debugging
+  window.sudokuRestart = restart;
 
-  // Run init on DOMContentLoaded
-  document.addEventListener('DOMContentLoaded', init);
-
+  // start after DOM ready
+  if (document.readyState === 'loading') {
+    window.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
 })();

@@ -6,16 +6,14 @@
   <meta name="description" content="Sudoku — static HTML/CSS/JS. Ringan, responsif, aksesibel. Board 9×9, difficulty, timer, save progress." />
   <title>Sudoku — Static</title>
 
+  <!-- Inter font to better match Flutter text rendering -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap" rel="stylesheet">
+
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="icons/icon-192.png">
 
   <!-- PWA manifest -->
   <link rel="manifest" href="manifest.json">
-
-  <!-- iOS (Safari) -->
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <link rel="apple-touch-icon" href="icons/icon-192.png">
 
   <!-- Theme color -->
   <meta name="theme-color" content="#0b0f14">
@@ -26,101 +24,106 @@
   <!-- Script utama (defer supaya DOM siap) -->
   <script defer src="script.js"></script>
 
-  <!-- Baseline kecil supaya .hidden benar-benar tersembunyi sebelum style.css dimuat -->
+  <!-- Minimal pre-style so .hidden/visually-hidden behave before CSS loads -->
   <style>
     .hidden{display:none!important;}
     .visually-hidden{position:absolute!important;height:1px;width:1px;overflow:hidden;clip:rect(1px,1px,1px,1px);white-space:nowrap;}
   </style>
 </head>
 <body>
-  <header class="site-header">
-    <div class="container header-inner">
+  <div class="app-shell">
 
-      <div class="controls" aria-label="Kontrol permainan" role="group">
-        <label for="difficulty" class="visually-hidden">Tingkat Kesulitan</label>
-        <select id="difficulty" title="Pilih tingkat kesulitan" aria-label="Tingkat kesulitan">
-          <option value="easy">Easy</option>
-          <option value="medium" selected>Medium</option>
-          <option value="hard">Hard</option>
-        </select>
+    <!-- Top controls: New + difficulty chips (right-aligned, minimal) -->
+    <header class="top-controls" role="banner" aria-label="Kontrol utama">
+      <div class="container top-controls-inner">
+        <div class="spacer" aria-hidden="true"></div>
 
-        <button id="new-game" type="button" title="New Game" aria-label="Permainan baru">New Game</button>
+        <div class="controls-row" role="group" aria-label="Kontrol permainan ringkas">
+          <!-- New game (icon-only) -->
+          <button id="new-game" class="ctrl-btn new-btn" type="button" title="Permainan baru" aria-label="Permainan baru">⟳</button>
 
-        <!-- Tombol Check dihilangkan dari UI (tetap ada di DOM untuk kompatibilitas script.js jika diperlukan) -->
-        <button id="check" class="hidden" type="button" title="Check" aria-label="Periksa jawaban">Check</button>
-
-        <button id="solve" type="button" title="Solve" aria-label="Selesaikan papan">Solve</button>
-
-        <button id="toggle-pencil" type="button" title="Toggle Pencil Mode" aria-pressed="false" aria-label="Mode catatan (pencil)">Pencil</button>
-        <button id="toggle-theme" type="button" title="Toggle Theme" aria-pressed="false" aria-label="Ganti tema terang/gelap">Theme</button>
-        <button id="reset" type="button" title="Reset" aria-label="Reset ke kondisi awal">Reset</button>
+          <!-- difficulty chips: E / M / H (single-letter minimal) -->
+          <button id="diff-e" class="ctrl-chip" data-diff="easy" aria-pressed="false" title="Mudah" aria-label="Mudah">E</button>
+          <button id="diff-m" class="ctrl-chip selected" data-diff="medium" aria-pressed="true" title="Sedang" aria-label="Sedang">M</button>
+          <button id="diff-h" class="ctrl-chip" data-diff="hard" aria-pressed="false" title="Sulit" aria-label="Sulit">H</button>
+        </div>
       </div>
-    </div>
-  </header>
+    </header>
 
-  <main class="container">
-    <!-- Info bar -->
-    <section class="info-bar" aria-hidden="false">
-      <div class="status" role="status" aria-live="polite">
-        <span id="timer">00:00</span>
-        <span id="mistakes" class="hidden" aria-live="polite">Mistakes: 0</span>
-      </div>
-    </section>
+    <main class="container main-area" role="main">
+      <!-- Game area: board centered -->
+      <section id="game" class="game" aria-label="Sudoku game" role="application">
+        <!-- board (cells injected by script.js) -->
+        <div id="sudoku-board" class="sudoku-board" role="grid" aria-label="Papan Sudoku 9x9" tabindex="0">
+          <!-- Overlay placeholders for JS to reuse (grid-lines, highlights, pulses) -->
+          <div id="grid-lines" aria-hidden="true"></div>
+          <div id="overlay-row" class="overlay-highlight row" aria-hidden="true"></div>
+          <div id="overlay-col" class="overlay-highlight col" aria-hidden="true"></div>
+          <div id="overlay-box" class="overlay-highlight box" aria-hidden="true"></div>
+        </div>
 
-    <!-- Game area -->
-    <section id="game" class="game" aria-label="Sudoku game" role="application">
-      <div id="sudoku-board" class="sudoku-board" role="grid" aria-label="Papan Sudoku 9 per 9" tabindex="0">
-        <!-- Kosong — akan diisi oleh script.js -->
-      </div>
+        <!-- cell template used by script.js -->
+        <template id="cell-template">
+          <div class="cell-wrapper" role="gridcell" data-row="0" data-col="0" data-box="0">
+            <input
+              class="cell"
+              type="text"
+              inputmode="numeric"
+              pattern="[1-9]"
+              maxlength="1"
+              autocomplete="off"
+              aria-label="Kosong"
+              readonly
+            />
+            <div class="notes" aria-hidden="true">
+              <div class="note" data-n="1"></div><div class="note" data-n="2"></div><div class="note" data-n="3"></div>
+              <div class="note" data-n="4"></div><div class="note" data-n="5"></div><div class="note" data-n="6"></div>
+              <div class="note" data-n="7"></div><div class="note" data-n="8"></div><div class="note" data-n="9"></div>
+            </div>
+          </div>
+        </template>
 
-      <template id="cell-template">
-        <div class="cell-wrapper" role="gridcell" data-row="0" data-col="0" data-box="0">
-          <input
-            class="cell"
-            type="text"
-            inputmode="numeric"
-            pattern="[1-9]"
-            maxlength="1"
-            autocomplete="off"
-            aria-label="Kosong"
-            readonly
-          />
-          <div class="notes" aria-hidden="true">
-            <div class="note" data-n="1"></div><div class="note" data-n="2"></div><div class="note" data-n="3"></div>
-            <div class="note" data-n="4"></div><div class="note" data-n="5"></div><div class="note" data-n="6"></div>
-            <div class="note" data-n="7"></div><div class="note" data-n="8"></div><div class="note" data-n="9"></div>
+        <div id="message" class="message" role="status" aria-live="polite"></div>
+
+        <!-- Digit bank (two rows). Large borderless digits; small count under digit -->
+        <div id="digit-bank" class="digit-bank" role="toolbar" aria-label="Pilih angka">
+          <div class="digit-row top" role="group" aria-label="Angka atas">
+            <button class="digit-btn" data-digit="1" aria-pressed="false" title="1" aria-label="Angka 1"><span class="digit">1</span><span class="count" aria-hidden="true">9</span></button>
+            <button class="digit-btn" data-digit="2" aria-pressed="false" title="2" aria-label="Angka 2"><span class="digit">2</span><span class="count" aria-hidden="true">9</span></button>
+            <button class="digit-btn" data-digit="3" aria-pressed="false" title="3" aria-label="Angka 3"><span class="digit">3</span><span class="count" aria-hidden="true">9</span></button>
+            <button class="digit-btn" data-digit="4" aria-pressed="false" title="4" aria-label="Angka 4"><span class="digit">4</span><span class="count" aria-hidden="true">9</span></button>
+            <button class="digit-btn" data-digit="5" aria-pressed="false" title="5" aria-label="Angka 5"><span class="digit">5</span><span class="count" aria-hidden="true">9</span></button>
+          </div>
+
+          <div class="digit-row bottom" role="group" aria-label="Angka bawah">
+            <button class="digit-btn" data-digit="6" aria-pressed="false" title="6" aria-label="Angka 6"><span class="digit">6</span><span class="count" aria-hidden="true">9</span></button>
+            <button class="digit-btn" data-digit="7" aria-pressed="false" title="7" aria-label="Angka 7"><span class="digit">7</span><span class="count" aria-hidden="true">9</span></button>
+            <button class="digit-btn" data-digit="8" aria-pressed="false" title="8" aria-label="Angka 8"><span class="digit">8</span><span class="count" aria-hidden="true">9</span></button>
+            <button class="digit-btn" data-digit="9" aria-pressed="false" title="9" aria-label="Angka 9"><span class="digit">9</span><span class="count" aria-hidden="true">9</span></button>
+
+            <!-- erase / clear (matches Clear control) -->
+            <button id="erase-btn" class="erase-btn" title="Hapus" aria-label="Hapus">⌫</button>
           </div>
         </div>
-      </template>
+      </section>
 
-      <div id="message" class="message" role="status" aria-live="polite"></div>
+      <!-- footer controls: Clear + Undo + minimal mistakes (number already in top) -->
+      <footer class="footer-controls" role="contentinfo" aria-label="Kontrol bawah">
+        <div class="footer-inner container">
+          <div class="left-controls" role="group" aria-label="Kontrol bawah kiri">
+            <button id="clear-btn" class="icon-btn" title="Clear selected" aria-label="Hapus isi sel">⌫</button>
+            <button id="undo-btn" class="icon-btn" title="Undo" aria-label="Batalkan">⤺</button>
+          </div>
 
-      <div id="digit-bank" class="digit-bank" role="toolbar" aria-label="Pilih angka">
-        <!-- digit buttons -->
-        <button class="digit-btn" data-digit="1" aria-pressed="false" title="Angka 1"><span class="digit">1</span><span class="count" aria-hidden="true">9</span></button>
-        <button class="digit-btn" data-digit="2" aria-pressed="false" title="Angka 2"><span class="digit">2</span><span class="count" aria-hidden="true">9</span></button>
-        <button class="digit-btn" data-digit="3" aria-pressed="false" title="Angka 3"><span class="digit">3</span><span class="count" aria-hidden="true">9</span></button>
-        <button class="digit-btn" data-digit="4" aria-pressed="false" title="Angka 4"><span class="digit">4</span><span class="count" aria-hidden="true">9</span></button>
-        <button class="digit-btn" data-digit="5" aria-pressed="false" title="Angka 5"><span class="digit">5</span><span class="count" aria-hidden="true">9</span></button>
-        <button class="digit-btn" data-digit="6" aria-pressed="false" title="Angka 6"><span class="digit">6</span><span class="count" aria-hidden="true">9</span></button>
-        <button class="digit-btn" data-digit="7" aria-pressed="false" title="Angka 7"><span class="digit">7</span><span class="count" aria-hidden="true">9</span></button>
-        <button class="digit-btn" data-digit="8" aria-pressed="false" title="Angka 8"><span class="digit">8</span><span class="count" aria-hidden="true">9</span></button>
-        <button class="digit-btn" data-digit="9" aria-pressed="false" title="Angka 9"><span class="digit">9</span><span class="count" aria-hidden="true">9</span></button>
+          <div class="spacer" aria-hidden="true"></div>
 
-        <button id="erase-btn" class="erase-btn" title="Hapus isi sel" aria-label="Hapus">⌫</button>
-      </div>
-    </section>
-
-    <aside class="side-panel" aria-label="Panel">
-      <button id="save-progress" type="button">Save</button>
-      <button id="load-progress" type="button">Load</button>
-
-      <div id="leaderboard" class="leaderboard" aria-hidden="true">
-        <strong>Leaderboard lokal</strong>
-        <ol id="leader-list"></ol>
-      </div>
-    </aside>
-  </main>
+          <div class="footer-right" aria-hidden="true">
+            <div class="mistakes-mini"><span id="mistakes-mini">0</span></div>
+          </div>
+        </div>
+      </footer>
+    </main>
+  </div>
 
   <noscript>
     <div class="noscript-warning" role="alert">

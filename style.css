@@ -1,429 +1,210 @@
-/* ========================================================================== 
-   Sudoku — style.css (final: compact layout + reliable digit bank badges)
-   - minor polish: removed erase-button gradient, improved focus states,
-     ensured disabled buttons don't accept pointer events
-   ========================================================================== */
+/* style.css - Fixed: grid lines via overlays + exact font sizing to match Flutter look */
 
-/* -----------------------------
-   CSS Variables (Light theme default)
-   ----------------------------- */
-:root {
-  --bg: #ffffff;
-  --bg-soft: #f6f7f9;
-  --panel: #ffffff;
-  --border: #e5e7eb;
-  --text: #111827;
-  --muted: #6b7280;
-  --primary: #2563eb;
-  --primary-ghost: rgba(37, 99, 235, 0.08);
-  --accent: #0ea5e9;
-  --danger: #ef4444;
-  --ok: #059669;
-  --shadow: 0 1px 2px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.06);
+/* -------------------------
+   Variables
+   ------------------------- */
+:root{
+  --bg: #FDF9F4;
+  --cell-bg: #ffffff;
+  --muted-bg: #F6F6F6;
+  --line-color: #000; /* pure black for all lines */
+  --thin: 1px;        /* actual pixels — JS will use these values */
+  --thick: 3px;       /* separator for 3x3 */
+  --cell-gap: 0;
+  --board-max: 92vmin;
 
-  --cell-size: 48px;          /* base cell size (desktop) */
-  --cell-gap: 4px;            /* gap antar sel */
-  --radius: 8px;              /* rounding */
-  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
-  --container-max: 680px;     /* lebih sempit supaya desktop mirip mobile */
-  --board-size: min(86vw, 460px); /* board lebih compact */
-
-  /* digit bank sizing */
-  --digit-btn-min-h: 42px;
-  --digit-btn-max-h: 56px;
-  --digit-btn-v-padding: 6px;
-  --digit-badge-size: 20px;
+  /* sizes tuned to match Flutter scale */
+  --cell-font: 72px;          /* target desktop; CSS will clamp for small screens below */
+  --cell-font-min: 28px;      /* smallest usable on tiny screens */
+  --digit-tile-h: 64px;       /* height of digit tiles */
+  --digit-font: 36px;
 }
 
-/* Explicit dark theme via toggle (JS sets data-theme="dark" on documentElement) */
-:root[data-theme="dark"],
-html[data-theme="dark"],
-body[data-theme="dark"],
-.dark {
-  --bg: #0b0f14;
-  --bg-soft: #10161d;
-  --panel: #0f141a;
-  --border: #1f2937;
-  --text: #e5e7eb;
-  --muted: #9ca3af;
-  --primary: #60a5fa;
-  --primary-ghost: rgba(96, 165, 250, 0.15);
-  --accent: #38bdf8;
-  --danger: #f87171;
-  --ok: #34d399;
-  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+/* responsive scaling for small screens */
+@media (max-width: 560px) {
+  :root{
+    --cell-font: 44px;
+    --digit-tile-h: 56px;
+    --digit-font: 28px;
+  }
 }
 
-/* -----------------------------
+/* -------------------------
    Base
-   ----------------------------- */
-*,
-*::before,
-*::after { box-sizing: border-box; }
+   ------------------------- */
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);font-family: Inter, "Segoe UI", Roboto, "Helvetica Neue", Arial, system-ui, -apple-system; color:#000}
+.container{width:100%;max-width:1100px;margin:0 auto;padding:0 12px}
 
-html, body { height: 100%; }
+/* app shell layout */
+.app-shell{display:flex;flex-direction:column;min-height:100vh}
 
-body {
-  margin: 0;
-  font-family: var(--font);
-  background: var(--bg);
-  color: var(--text);
-  line-height: 1.35;
-  -webkit-font-smoothing:antialiased;
-  -moz-osx-font-smoothing:grayscale;
-}
+/* top controls */
+.top-controls-inner{display:flex;align-items:center;height:44px}
+.controls-row{margin-left:auto;display:flex;gap:10px;align-items:center}
 
-/* container narrower to look like mobile even on desktop */
-.container {
-  max-width: var(--container-max);
-  margin: 0 auto;
-  padding: 6px; /* compact */
-}
+/* control visuals */
+.ctrl-btn{background:transparent;border:0;padding:6px 8px;font-size:20px;cursor:pointer;color:var(--line-color)}
+.ctrl-chip{display:inline-grid;place-items:center;width:46px;height:34px;border-radius:10px;border:0;background:transparent;font-weight:900;font-size:16px;cursor:pointer}
+.ctrl-chip.selected,.ctrl-chip[aria-pressed="true"]{background:var(--line-color);color:#fff}
 
-/* small helpers */
-.visually-hidden {
-  position: absolute !important;
-  height: 1px; width: 1px;
-  overflow: hidden; clip: rect(1px,1px,1px,1px);
-  white-space: nowrap;
-}
+/* info row */
+.info-row{width:100%;display:flex;justify-content:center;margin:8px 0}
+.info-inner{display:flex;align-items:center;gap:12px;font-weight:600}
+.timer{font-variant-numeric:tabular-nums;font-size:14px}
+.mistakes{font-size:14px}
 
-/* -----------------------------
-   Header & Controls (compact, single-row)
-   ----------------------------- */
-.site-header {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  background: var(--bg);
-  border-bottom: 1px solid var(--border);
-  backdrop-filter: blur(6px);
-  margin-bottom: 4px; /* bring info-bar closer */
-}
-
-.header-inner {
-  display: flex;
-  align-items: center;
-  gap: 8px; /* slightly tighter */
-  justify-content: space-between;
-  padding: 6px 6px;     /* reduced */
-  height: 44px;         /* shorter */
-  box-sizing: border-box;
-}
-
-/* title smaller to save space */
-.title {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 700;
-  letter-spacing: .2px;
-  display:flex;
-  align-items:center;
-  gap:8px;
-}
-
-/* controls: single line, scroll if overflow */
-.controls {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  padding-bottom: 0;
-  -webkit-overflow-scrolling: touch;
-}
-/* hide scrollbar on webkit */
-.controls::-webkit-scrollbar { height: 8px; display: none; }
-.controls { -ms-overflow-style: none; scrollbar-width: none; }
-
-/* small control sizes */
-select,
-button {
-  appearance: none;
-  border: 1px solid var(--border);
-  background: var(--panel);
-  color: var(--text);
-  border-radius: 8px;
-  padding: 6px 10px;
-  font: 500 0.95rem/1 var(--font);
-  cursor: pointer;
-  transition: background .12s ease, border-color .12s ease, transform .06s ease;
-  white-space: nowrap;
-}
-select:focus,
-button:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-button:hover { background: var(--bg-soft); }
-button:active { transform: translateY(1px); }
-
-#toggle-pencil.active {
-  border-color: var(--primary);
-  box-shadow: inset 0 0 0 2px var(--primary-ghost);
-  background: var(--primary-ghost);
-}
-#toggle-theme[aria-pressed="true"] {
-  border-color: var(--accent);
-  box-shadow: inset 0 0 0 2px var(--primary-ghost);
-  background: var(--primary-ghost);
-}
-
-/* -----------------------------
-   Info bar (compact)
-   ----------------------------- */
-.info-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;            /* tighter */
-  padding: 6px 8px;    /* reduced */
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: var(--shadow);
-  margin: 6px 0;       /* bring board closer */
-  font-size: .95rem;
-}
-
-.status { display:flex; gap:8px; align-items:center; font-weight:600; }
-#timer { font-variant-numeric: tabular-nums; }
-#mistakes { color: var(--muted); font-weight:700; }
-.instructions { color: var(--muted); font-size: .9rem; }
-
-/* -----------------------------
-   Game layout (mobile-like on desktop)
-   ----------------------------- */
-main.container {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 6px; /* tighter between sections */
-}
-
-.game { display:grid; gap:6px; }
-
-/* smaller, compact board */
+/* -------------------------
+   Board container
+   ------------------------- */
 .sudoku-board {
-  width: var(--board-size);
-  aspect-ratio: 1 / 1;
+  --size: min(var(--board-max), 92vmin);
+  width: var(--size);
+  height: var(--size);
   margin: 0 auto;
+  position: relative;
   display: grid;
   grid-template-columns: repeat(9, 1fr);
-  grid-auto-rows: 1fr;
+  grid-template-rows: repeat(9, 1fr);
   gap: var(--cell-gap);
-  padding: 6px; /* reduced */
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: var(--shadow);
-  position: relative;
-  margin-top: 0;
-  margin-bottom: 4px;
+  background: var(--cell-bg);
+  overflow: visible;
+  user-select: none;
 }
 
-/* 3x3 separators simplified */
-.sudoku-board::before,
-.sudoku-board::after {
+/* grid cell wrapper (no borders here) */
+.cell-wrapper {
+  position: relative;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background: var(--cell-bg);
+  width:100%;
+  height:100%;
+  padding:0;
+  margin:0;
+}
+
+/* cell "label" (readonly input used visually) */
+.cell {
+  width:100%;
+  height:100%;
+  border:0;
+  margin:0;
+  padding:0;
+  text-align:center;
+  font-variant-numeric: tabular-nums;
+  font-size: clamp(var(--cell-font-min), 6.8vmin, var(--cell-font));
+  line-height: 1;
+  font-weight:500; /* user input weight; fixed/given will override */
+  color: #000;
+  background: transparent;
+  caret-color: transparent;
+  outline: none;
+  pointer-events:none; /* clicking handled by wrapper */
+}
+
+/* fixed/given numbers */
+.cell.fixed { font-weight: 700 }
+
+/* selected overlay */
+.cell-wrapper.selected::after {
   content: "";
   position: absolute;
-  inset: 8px;
+  inset: 0;
+  background: rgba(0,0,0,0.04); /* subtle fill like Flutter */
   pointer-events: none;
-  border-radius: 6px;
-  background:
-    linear-gradient(to right, transparent calc((100%/3) - 1px), var(--border) calc((100%/3) - 1px), var(--border) calc((100%/3) + 1px), transparent calc((100%/3) + 1px),
-                               transparent calc((200%/3) - 1px), var(--border) calc((200%/3) - 1px), var(--border) calc((200%/3) + 1px), transparent calc((200%/3) + 1px)) ,
-    linear-gradient(to bottom, transparent calc((100%/3) - 1px), var(--border) calc((100%/3) - 1px), var(--border) calc((100%/3) + 1px), transparent calc((100%/3) + 1px),
-                               transparent calc((200%/3) - 1px), var(--border) calc((200%/3) - 1px), var(--border) calc((200%/3) + 1px), transparent calc((200%/3) + 1px));
-  z-index: 0;
-  opacity: .95;
 }
 
-/* cell wrapper compact */
-.cell-wrapper { position: relative; z-index: 1; border-radius: 6px; overflow: hidden; }
+/* conflict style */
+.cell-wrapper.has-conflict .cell,
+.cell-wrapper.has-conflict { color: #d32f2f }
 
-/* cell style */
-.cell {
-  width: 100%;
-  height: 100%;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--text);
-  font-weight: 700;
-  font-size: clamp(16px, 3.4vw, 20px);
-  text-align: center;
-  padding: 0;
-  cursor: default;
-}
-
-.cell.given { background: var(--bg-soft); font-weight:800; color:var(--text); }
-.cell:focus { outline: 2px solid var(--accent); outline-offset: -2px; }
-
-/* notes/pencil */
+/* notes (small 3x3 inside cell) */
 .notes {
-  position: absolute; inset: 0;
-  display: grid; grid-template-columns: repeat(3,1fr); grid-auto-rows: 1fr;
-  pointer-events: none; font-size: clamp(9px, 1.6vw, 11px); color:var(--muted);
-}
-.note { display:grid; place-items:center; opacity:.9; }
-
-/* highlight styles */
-.cell-wrapper.highlight-row .cell,
-.cell-wrapper.highlight-col .cell,
-.cell-wrapper.highlight-block .cell {
-  background: color-mix(in oklab, var(--bg) 86%, var(--primary) 14%);
-}
-.cell-wrapper.highlight .cell { border-color: var(--accent); }
-
-/* invalid */
-.cell.invalid { border-color: var(--danger); color: var(--danger); animation: wiggle .22s ease; }
-@keyframes wiggle { 0%{transform:translateX(0)}25%{transform:translateX(-4px)}50%{transform:translateX(3px)}100%{transform:translateX(0)} }
-
-/* message */
-.message { min-height: 16px; text-align:center; color:var(--muted); font-size:.95rem; margin-top:2px; margin-bottom:2px; }
-
-/* side panel */
-.side-panel { display:grid; gap:8px; }
-.leaderboard { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:8px; }
-
-/* -----------------------------
-   Digit bank — final stable implementation
-   - badge (.count) positioned inside the button (top-right)
-   - main digit centered and never causes count to overflow outside
-   ----------------------------- */
-.digit-bank {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 6px;               /* compact */
-  align-items: stretch;
-  padding: 4px 2px;
-  margin-top: 4px;
-}
-
-/* button: relative so badge can be absolute inside it */
-.digit-btn {
-  position: relative;
-  box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0; /* use fixed height so digit centered perfectly */
-  height: clamp(var(--digit-btn-min-h), 11vw, var(--digit-btn-max-h));
-  min-height: var(--digit-btn-min-h);
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--panel);
-  color: var(--text);
-  cursor: pointer;
-  user-select: none;
-  overflow: hidden; /* ensures contents don't spill */
-  transition: transform .06s ease, background .12s ease, box-shadow .12s ease;
-}
-
-/* center the digit text block inside */
-.digit-btn .digit {
-  display: block;
-  font-weight: 800;
-  font-size: clamp(1rem, 2.6vw, 1.05rem);
-  line-height: 1;
-  padding: 0 6px;
-  text-align: center;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  overflow: hidden;
-}
-
-/* badge: absolute, top-right inside button */
-.digit-btn .count {
   position: absolute;
-  top: 6px;
-  right: 6px;
-  min-width: var(--digit-badge-size);
-  height: var(--digit-badge-size);
-  padding: 0 6px;
-  box-sizing: border-box;
-  display: inline-flex;
+  inset: 6%;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  gap: 2px;
+  font-size: clamp(8px, 1.6vmin, 12px);
+  color: rgba(0,0,0,0.6);
   align-items: center;
-  justify-content: center;
-  gap: 4px;
-  font-size: .66rem;
-  line-height: 1;
-  color: var(--text);
-  background: color-mix(in oklab, var(--panel) 84%, var(--bg-soft) 16%);
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  pointer-events: none; /* so clicks fall through to button */
-  font-variant-numeric: tabular-nums;
-  box-shadow: 0 1px 0 rgba(0,0,0,0.03) inset;
-}
-
-/* hover / active feedback */
-.digit-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,0.06); background: color-mix(in oklab, var(--panel) 92%, var(--bg-soft) 8%); }
-.digit-btn:active { transform: translateY(0); box-shadow: none; }
-
-/* focus-visible for better keyboard accessibility */
-.digit-btn:focus-visible {
-  outline: 3px solid color-mix(in oklab, var(--accent) 70%, transparent 30%);
-  outline-offset: 3px;
-}
-
-/* disabled state: ensure no pointer interactions */
-.digit-btn[disabled],
-.digit-btn[aria-disabled="true"] {
-  opacity: .55;
-  cursor: not-allowed;
-  transform: none;
-  box-shadow: none;
+  justify-items: center;
+  visibility: hidden;
   pointer-events: none;
 }
+.cell-wrapper.note-mode .notes { visibility: visible }
 
-/* erase button: NO GRADIENT — use same panel background and a danger accent for the icon */
-#erase-btn {
-  border-color: var(--border);
-  background: var(--panel);         /* removed gradient (user requested) */
-  color: var(--danger);             /* make erase symbol stand out */
+/* small note tile */
+.note{display:grid;place-items:center;font-weight:600;width:100%;height:100%}
+
+/* -------------------------
+   Grid lines overlays (created by JS) -- styling
+   ------------------------- */
+.grid-line {
+  position:absolute;
+  background: var(--line-color);
+  pointer-events: none;
+  z-index: 6; /* on top of cell text */
+  will-change: transform, opacity;
 }
+.grid-line.vertical { height:100%; top:0; }
+.grid-line.horizontal { width:100%; left:0; }
 
-/* when erase is focused, keep accessible ring */
-#erase-btn:focus-visible {
-  outline: 3px solid color-mix(in oklab, var(--danger) 60%, transparent 40%);
-  outline-offset: 3px;
+/* for thick separators add class .thick (JS will set) */
+.grid-line.thick { background: var(--line-color); }
+
+/* overlay box / row / col highlights (JS controls positioning & opacity) */
+.overlay-highlight { position:absolute; pointer-events:none; z-index:4; }
+.overlay-highlight.row, .overlay-highlight.col { background: rgba(0,0,0,0.12); transition: opacity 180ms ease; }
+.overlay-highlight.box { background: rgba(0,0,0,0.92); opacity: 0.06; transition: opacity 180ms ease; }
+
+/* completion pulse: JS will add .pulse class on board or overlay element */
+@keyframes completePulse {
+  0%{ box-shadow:0 0 0 0 rgba(60,180,75,0.28); }
+  70%{ box-shadow:0 0 0 24px rgba(60,180,75,0.06); }
+  100%{ box-shadow:0 0 0 0 rgba(60,180,75,0); }
 }
+.pulse { animation: completePulse 560ms ease-out; }
 
-/* bump animation for count updates (JS will toggle .count-update) */
-.count-update { animation: bump .26s ease; }
-@keyframes bump { 0%{transform:scale(1)}50%{transform:scale(1.12)}100%{transform:scale(1)} }
-
-/* very narrow screens: slightly reduce badge & height */
-@media (max-width: 360px) {
-  .digit-btn { height: clamp(40px, 14vw, 48px); }
-  .digit-btn .digit { font-size: .98rem; }
-  .digit-btn .count { font-size: .62rem; top: 5px; right: 5px; min-width: 18px; height: 18px; padding: 0 4px; }
+/* -------------------------
+   Digit bank (two rows)
+   ------------------------- */
+.digit-bank { width:100%; max-width:1100px; margin:8px auto 0; display:flex; flex-direction:column; gap:8px; align-items:center; }
+.digit-row { display:flex; gap:8px; justify-content:center; align-items:center; }
+.digit-btn {
+  width: var(--digit-tile-h);
+  height: var(--digit-tile-h);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  border-radius:6px;
+  border:0;
+  background:var(--cell-bg);
+  cursor:pointer;
+  padding:6px;
+  box-shadow:none;
+  -webkit-tap-highlight-color: transparent;
 }
+.digit-btn:active{ transform: scale(.98); }
+.digit-btn[aria-pressed="true"]{ background: rgba(0,0,0,0.02) }
+.digit{ font-size: var(--digit-font); font-weight:900; line-height:1; font-family: inherit; }
+.count{ font-size:12px; margin-top:4px; font-weight:700; color: rgba(0,0,0,0.55) }
 
-/* accessibility focus */
-.digit-btn:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* erase button matches tile size */
+.erase-btn{ width: var(--digit-tile-h); height: var(--digit-tile-h); border-radius:6px; border:0; background:transparent; font-size:20px; cursor:pointer }
 
-/* -----------------------------
-   Footer / misc
-   ----------------------------- */
-.site-footer { margin-top:8px; padding:10px 0 16px; color:var(--muted); border-top:1px solid var(--border); }
+/* -------------------------
+   Footer
+   ------------------------- */
+.footer-controls{ width:100%; margin-top:12px }
+.footer-inner{ display:flex; align-items:center; gap:8px }
+.left-controls{ display:flex; gap:8px; align-items:center }
+.icon-btn{ background:transparent; border:0; font-size:20px; cursor:pointer }
 
-.noscript-warning { margin:12px; padding:10px; background:var(--danger); color:#fff; border-radius:8px; }
-
-/* responsive tweaks */
-@media (max-width: 420px) {
-  .container { padding:8px; }
-  .header-inner { height:48px; padding:6px; gap:6px; }
-  select, button { padding:6px 8px; font-size:.95rem; }
-  .sudoku-board { width: min(96vw, 420px); padding:6px; }
-  .digit-bank { grid-template-columns: repeat(5, minmax(0,1fr)); gap:6px; }
-}
-
-/* print minimal */
-@media print {
-  .site-header, .info-bar, .side-panel, .digit-bank, .site-footer { display:none !important; }
-  .sudoku-board { --size: 18cm; box-shadow:none; background:#fff; border:none; }
-  .cell { background:#fff; color:#000; border:1px solid #000; }
-}
+/* misc */
+.hidden{display:none!important}
+.visually-hidden{position:absolute!important;height:1px;width:1px;overflow:hidden;clip:rect(1px,1px,1px,1px);white-space:nowrap}
